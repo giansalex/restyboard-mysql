@@ -24,7 +24,7 @@ $oauth_config = array(
     'user_table' => 'users'
 );
 $val_array = array(
-    'dsn' => 'pgsql:host=' . R_DB_HOST . ';dbname=' . R_DB_NAME . ';port=' . R_DB_PORT,
+    'dsn' => 'mysql:host=' . R_DB_HOST . ';dbname=' . R_DB_NAME . ';port=' . R_DB_PORT . ';charset=utf8',
     'username' => R_DB_USER,
     'password' => R_DB_PASSWORD
 );

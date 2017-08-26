@@ -33,7 +33,7 @@ function getToken($post)
         'user_table' => 'users'
     );
     $val_array = array(
-        'dsn' => 'pgsql:host=' . R_DB_HOST . ';dbname=' . R_DB_NAME . ';port=' . R_DB_PORT,
+        'dsn' => 'mysql:host=' . R_DB_HOST . ';dbname=' . R_DB_NAME . ';port=' . R_DB_PORT . ';charset=utf8',
         'username' => R_DB_USER,
         'password' => R_DB_PASSWORD
     );
@@ -314,6 +314,7 @@ function doGet($url)
  */
 function insertActivity($user_id, $comment, $type, $foreign_ids = array() , $revision = null, $foreign_id = null)
 {
+    /**@var $db_lnk PDO*/
     global $r_debug, $db_lnk;
     $result = '';
     $fields = array(
@@ -332,6 +333,7 @@ function insertActivity($user_id, $comment, $type, $foreign_ids = array() , $rev
         $type,
         $revision
     );
+
     if ($foreign_id !== null) {
         array_push($fields, 'foreign_id');
         array_push($values, $foreign_id);
@@ -352,28 +354,31 @@ function insertActivity($user_id, $comment, $type, $foreign_ids = array() , $rev
             $val.= '$' . $i;
             $val.= ($i != $len) ? ', ' : '';
         }
-        $result = pg_query_params($db_lnk, 'INSERT INTO activities (' . implode(', ', $fields) . ') VALUES (' . $val . ') RETURNING *', $values);
+
+        $db_lnk->exec('INSERT INTO activities (' . implode(', ', $fields) . ') VALUES (' . $val . ')');
     }
-    $row = pg_fetch_assoc($result);
-    $id_converted = base_convert($row['id'], 10, 36);
+    $id = $db_lnk->lastInsertId();
+    $id_converted = base_convert($id, 10, 36);
     $materialized_path = sprintf("%08s", $id_converted);
     $freshness_ts = date('Y-m-d h:i:s');
-    $path = 'P' . $row['id'];
+    $path = 'P' . $id;
     $depth = 0;
     $qry_val_arr = array(
         $materialized_path,
         $path,
         $depth,
         $freshness_ts,
-        $row['id']
+        $id
     );
-    $result = pg_query_params($db_lnk, 'UPDATE activities SET materialized_path = $1, path = $2, depth = $3, freshness_ts = $4 WHERE id = $5 RETURNING *', $qry_val_arr);
-    $row = pg_fetch_assoc($result);
+    $sth = $db_lnk->prepare('UPDATE activities SET materialized_path = ?, path = ?, depth = ?, freshness_ts = ? WHERE id = ?');
+    $sth->execute($qry_val_arr);
+    $id = $db_lnk->lastInsertId();
     $qry_val_arr = array(
-        $row['id']
+        $id
     );
-    $s_row = pg_query_params($db_lnk, 'SELECT * FROM activities_listing WHERE id = $1', $qry_val_arr);
-    $row = pg_fetch_assoc($s_row);
+    $sth = $db_lnk->prepare('SELECT * FROM activities_listing WHERE id = ?');
+    $sth->execute($qry_val_arr);
+    $row = $sth->fetch(PDO::FETCH_ASSOC);
     return $row;
 }
 /**
@@ -564,7 +569,7 @@ function executeQuery($qry, $arr = array())
  */
 function sendMail($template, $replace_content, $to, $reply_to_mail = '')
 {
-    global $r_debug, $db_lnk, $_server_domain_url;
+    global $_server_domain_url;
     if (file_exists(APP_PATH . '/tmp/cache/site_url_for_shell.php')) {
         include_once APP_PATH . '/tmp/cache/site_url_for_shell.php';
     }
@@ -601,6 +606,7 @@ function sendMail($template, $replace_content, $to, $reply_to_mail = '')
  */
 function saveIp()
 {
+    /**@var $db_lnk PDO*/
     global $db_lnk;
     $qry_val_arr = array(
         $_SERVER['REMOTE_ADDR']
@@ -629,8 +635,9 @@ function saveIp()
                     $_geo['region'],
                     $country_id
                 );
-                $result = pg_query_params($db_lnk, 'INSERT INTO states (created, modified, name, country_id) VALUES (now(), now(), $1, $2) RETURNING id', $qry_val_arr);
-                $state_row = pg_fetch_assoc($result);
+                $sth = $db_lnk->prepare('INSERT INTO states (created, modified, name, country_id) VALUES (now(), now(), ?, ?)');
+                $sth->execute($qry_val_arr);
+                $state_row = ['id' => $db_lnk->lastInsertId()];
             }
             $qry_val_arr = array(
                 $_geo['city']
@@ -644,8 +651,9 @@ function saveIp()
                     $_geo['latitude'],
                     $_geo['longitude']
                 );
-                $result = pg_query_params($db_lnk, 'INSERT INTO cities (created, modified, name, state_id, country_id, latitude, longitude) VALUES (now(), now(), $1, $2, $3, $4, $5) RETURNING id ', $qry_val_arr);
-                $city_row = pg_fetch_assoc($result);
+                $sth = $db_lnk->prepare('INSERT INTO cities (created, modified, name, state_id, country_id, latitude, longitude) VALUES (now(), now(), ?, ?, ?, ?, ?)');
+                $sth->execute($qry_val_arr);
+                $city_row = ['id' => $db_lnk->lastInsertId()];
             }
         }
         $user_agent = !empty($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
@@ -663,8 +671,9 @@ function saveIp()
             $lng,
             $user_agent
         );
-        $result = pg_query_params($db_lnk, 'INSERT INTO ips (created, modified, ip, host, city_id, state_id, country_id, latitude, longitude, user_agent) VALUES (now(), now(), $1, $2, $3, $4, $5, $6, $7, $8) RETURNING id', $qry_val_arr);
-        $ip_row = pg_fetch_assoc($result);
+        $sth = $db_lnk->prepare('INSERT INTO ips (created, modified, ip, host, city_id, state_id, country_id, latitude, longitude, user_agent) VALUES (now(), now(), ?, ?, ?, ?, ?, ?, ?, ?)');
+        $sth->execute($qry_val_arr);
+        $ip_row = ['id' => $db_lnk->lastInsertId()];
     }
     return $ip_row['id'];
 }
@@ -680,6 +689,7 @@ function saveIp()
  */
 function copyCards($cards, $new_list_id, $name, $new_board_id = '')
 {
+    /**@var $db_lnk PDO*/
     global $db_lnk, $authUser;
     $foreign_ids = $response = array();
     while ($card = pg_fetch_object($cards)) {
@@ -691,7 +701,6 @@ function copyCards($cards, $new_list_id, $name, $new_board_id = '')
         }
         $card_result = pg_execute_insert('cards', $card);
         if ($card_result) {
-            $card_result = pg_fetch_assoc($card_result);
             $new_card_id = $card_result['id'];
             $foreign_ids['card_id'] = $new_card_id;
             $foreign_ids['board_id'] = $new_board_id;
@@ -822,15 +831,18 @@ function copyCards($cards, $new_list_id, $name, $new_board_id = '')
  */
 function pg_execute_insert($table_name, $r_post, $return_row = 1)
 {
+    /**@var $db_lnk PDO*/
     global $db_lnk;
     $fields = 'created, modified';
     $values = 'now(), now()';
     $val_arr = array();
-    $i = 1;
+    $obj = [];
+
     foreach ($r_post as $key => $value) {
         if ($key != 'id') {
+            $obj[$key] = $value;
             $fields.= ', "' . $key . '"';
-            $values.= ', $' . $i;
+            $values.= ', ?';
             if ($value === false) {
                 $val_arr[] = 'false';
             } else if ($value === null) {
@@ -838,15 +850,16 @@ function pg_execute_insert($table_name, $r_post, $return_row = 1)
             } else {
                 $val_arr[] = $value;
             }
-            $i++;
         }
     }
-    if (!empty($return_row)) {
-        $row = pg_query_params($db_lnk, 'INSERT INTO ' . $table_name . ' (' . $fields . ') VALUES (' . $values . ') RETURNING *', $val_arr);
-    } else {
-        $row = pg_query_params($db_lnk, 'INSERT INTO ' . $table_name . ' (' . $fields . ') VALUES (' . $values . ')', $val_arr);
+
+    $stm = $db_lnk->prepare('INSERT INTO ' . $table_name . ' (' . $fields . ') VALUES (' . $values . ')');
+    if ($stm->execute($val_arr) === false) {
+        return false;
     }
-    return $row;
+
+    $obj['id'] = $db_lnk->lastInsertId();
+    return $obj;
 }
 /**
  * Common method to get binded values
