@@ -38,6 +38,7 @@ if (ini_get('date.timezone')) {
     $default_timezone = ini_get('date.timezone');
 }
 date_default_timezone_set($default_timezone);
+
 define('R_DB_HOST', 'localhost');
 define('R_DB_USER', 'root');
 define('R_DB_PASSWORD', '');
@@ -50,6 +51,7 @@ define('CHAT_DB_NAME', 'ejabb');
 define('CHAT_DB_PORT', '5432');
 define('SECURITYSALT', 'e9a556134534545ab47c6c81c14f06c0b8sdfsdf');
 define('SITE_LICENSE_KEY', 'REPLACE YOUR LICENCE HERE');
+define('SITE_NAME', 'MYSTIE');
 define('LICENSE_HASH', '');
 if (!defined('STDIN') && !file_exists(APP_PATH . '/tmp/cache/site_url_for_shell.php') && !empty($_server_domain_url)) {
     $fh = fopen(APP_PATH . '/tmp/cache/site_url_for_shell.php', 'a');
@@ -94,3 +96,57 @@ $thumbsizes = array(
     )
 );
 $aspect['CardAttachment']['large_thumb'] = 1;
+
+/**
+ * @param PDO $db
+ * @param $query
+ * @param $params
+ * @return mixed
+ */
+function pdoQueryFetchAssoc(PDO $db, $query, $params) {
+    $stm = $db->prepare($query);
+    $stm->execute($params);
+
+    return $stm->fetch(PDO::FETCH_ASSOC);
+}
+
+/**
+ * @param PDO $db
+ * @param string $query
+ * @param $params
+ * @return array
+ */
+function pdoQueryFetch(PDO $db, $query, $params = null)
+{
+    $stm = $db->prepare($query);
+    $stm->execute($params);
+    $all = $stm->fetchAll(PDO::FETCH_OBJ);
+
+    return $all;
+}
+
+/**
+ * @param PDO $db
+ * @param $query
+ * @param $params
+ * @return PDOStatement
+ */
+function pdoQueryStm(PDO $db, $query, $params = null) {
+    $stm = $db->prepare($query);
+    $stm->execute($params);
+
+    return $stm;
+}
+
+/**
+ * @param PDO $db
+ * @param $query
+ * @param $params
+ * @return array
+ */
+function pdoInsert(PDO $db, $query, $params = null) {
+    $stm = $db->prepare($query);
+    $stm->execute($params);
+
+    return ['id' => $db->lastInsertId()];
+}

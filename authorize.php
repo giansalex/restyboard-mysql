@@ -39,20 +39,20 @@ if (!$server->validateAuthorizeRequest($request, $response)) {
 $val_arr = array(
     $_GET['client_id'],
 );
-$oauth_client = executeQuery('SELECT client_name FROM oauth_clients WHERE client_id = $1', $val_arr);
+$oauth_client = executeQuery('SELECT client_name FROM oauth_clients WHERE client_id = ?', $val_arr);
 $error_msg = 0;
 if (!empty($_POST['email']) && !empty($_POST['password'])) {
     $val_arr = array(
-        $_POST['email']
+        ':email' => $_POST['email']
     );
-    $log_user = executeQuery('SELECT id, role_id, password, is_ldap::boolean::int FROM users WHERE email = $1 or username = $1', $val_arr);
+    $log_user = executeQuery('SELECT id, role_id, password, is_ldap::boolean::int FROM users WHERE email = :email or username = :email', $val_arr);
     $_POST['password'] = crypt($_POST['password'], $log_user['password']);
     $val_arr = array(
-        $_POST['email'],
-        $_POST['password'],
-        1
+        ':email' => $_POST['email'],
+        ':pass' => $_POST['password'],
+        ':active' => 1
     );
-    $user = executeQuery('SELECT * FROM users_listing WHERE (email = $1 or username = $1) AND password = $2 AND is_active = $3', $val_arr);
+    $user = executeQuery('SELECT * FROM users_listing WHERE (email = :email or username = :email) AND password = :pass AND is_active = :active', $val_arr);
     if (!empty($user)) {
         $_SESSION["username"] = $user['username'];
         $error_msg = 0;

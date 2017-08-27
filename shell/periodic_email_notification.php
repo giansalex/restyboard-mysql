@@ -354,5 +354,5 @@ if ($db_lnk) {
 $conditions = array(
     'now()'
 );
-executeQuery("DELETE FROM oauth_access_tokens WHERE expires < $1", $conditions);
-executeQuery("DELETE FROM oauth_refresh_tokens WHERE expires < $1", $conditions);
+executeQuery("DELETE FROM oauth_access_tokens WHERE expires < ?", $conditions);
+executeQuery("DELETE FROM oauth_refresh_tokens WHERE expires < ?", $conditions);

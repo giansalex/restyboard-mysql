@@ -23,21 +23,18 @@ if ($hash == md5(SECURITYSALT . $model . $id . $ext . $size)) {
     $condition = array(
         $id
     );
+    $fullPath = '';
     if ($model == 'User') {
-        $s_result = pg_query_params($db_lnk, 'SELECT profile_picture_path FROM users WHERE id = $1', $condition);
-        $row = pg_fetch_assoc($s_result);
+        $row = pdoQueryFetchAssoc($db_lnk, 'SELECT profile_picture_path FROM users WHERE id = ?', $condition);
         $fullPath = $row['profile_picture_path'];
     } else if ($model == 'Organization') {
-        $s_result = pg_query_params($db_lnk, 'SELECT logo_url FROM organizations WHERE id = $1', $condition);
-        $row = pg_fetch_assoc($s_result);
+        $row = pdoQueryFetchAssoc($db_lnk, 'SELECT logo_url FROM organizations WHERE id = ?', $condition);
         $fullPath = $row['logo_url'];
     } else if ($model == 'Board') {
-        $s_result = pg_query_params($db_lnk, 'SELECT background_picture_path FROM boards WHERE id = $1', $condition);
-        $row = pg_fetch_assoc($s_result);
+        $row = pdoQueryFetchAssoc($db_lnk, 'SELECT background_picture_path FROM boards WHERE id = ?', $condition);
         $fullPath = $row['background_picture_path'];
     } else if ($model == 'CardAttachment') {
-        $s_result = pg_query_params($db_lnk, 'SELECT path FROM card_attachments WHERE id = $1', $condition);
-        $row = pg_fetch_assoc($s_result);
+        $row = pdoQueryFetchAssoc($db_lnk, 'SELECT path FROM card_attachments WHERE id = ?', $condition);
         $fullPath = $row['path'];
     }
     $fullPath = APP_PATH . '/' . $fullPath;

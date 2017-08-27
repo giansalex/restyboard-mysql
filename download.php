@@ -22,8 +22,8 @@ if (!empty($_GET['id']) && !empty($_GET['hash'])) {
                 $conditions = array(
                     'access_token' => $auth['access_token']
                 );
-                $result = pg_query_params($db_lnk, 'SELECT user_id as username, expires, scope, client_id FROM oauth_access_tokens WHERE access_token = $1', $conditions);
-                $auth_response = pg_fetch_assoc($result);
+                $auth_response = pdoQueryFetchAssoc($db_lnk,'SELECT user_id as username, expires, scope, client_id FROM oauth_access_tokens WHERE access_token = ?', $conditions);
+
                 $expires = strtotime($auth_response['expires']);
                 if (empty($auth_response) || !empty($auth_response['error']) || ($auth_response['client_id'] != 6664115227792148 && $auth_response['client_id'] != OAUTH_CLIENTID) || ($expires > 0 && $expires < time() && $auth_response['client_id'] != 7857596005287233 && $auth_response['client_id'] != 1193674816623028)) {
                     $auth_response['error']['type'] = 'OAuth';
@@ -35,15 +35,13 @@ if (!empty($_GET['id']) && !empty($_GET['hash'])) {
                     $val_array = array(
                         $_GET['id']
                     );
-                    $result = pg_query_params($db_lnk, 'SELECT * FROM card_attachments WHERE id = $1', $val_array);
-                    $attachment = pg_fetch_assoc($result);
+                    $attachment = pdoQueryFetchAssoc($db_lnk,'SELECT * FROM card_attachments WHERE id = ?', $val_array);
                     if (!empty($attachment)) {
                         $val_array = array(
                             $attachment['board_id'],
                             $auth_response['username']
                         );
-                        $result = pg_query_params($db_lnk, 'SELECT bu.id FROM boards_users bu left join users u on u.id = bu.user_id WHERE bu.board_id = $1 and u.username = $2', $val_array);
-                        $board_user = pg_fetch_assoc($result);
+                        $board_user = pdoQueryFetchAssoc($db_lnk,'SELECT bu.id FROM boards_users bu left join users u on u.id = bu.user_id WHERE bu.board_id = ? and u.username = ?', $val_array);
                         if (!empty($board_user) || ($auth['user']['role_id'] == 1)) {
                             $mediadir = APP_PATH . DIRECTORY_SEPARATOR . 'media' . DIRECTORY_SEPARATOR . 'Card' . DIRECTORY_SEPARATOR . $attachment['card_id'];
                             $file = $mediadir . DIRECTORY_SEPARATOR . $attachment['name'];

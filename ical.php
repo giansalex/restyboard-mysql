@@ -19,8 +19,10 @@ if (!empty($_GET['id']) && !empty($_GET['hash'])) {
         $val_array = array(
             $_GET['id']
         );
-        $result = pg_query_params($db_lnk, 'SELECT board.name, card.id, card.name as card_name, card.description, card.due_date FROM boards board LEFT JOIN cards card ON card.board_id = board.id WHERE card.is_archived = FALSE AND card.due_date IS NOT NULL AND board.id = $1', $val_array);
-        $count = pg_num_rows($result);
+        $stm = $db_lnk->prepare('SELECT board.name, card.id, card.name as card_name, card.description, card.due_date FROM boards board LEFT JOIN cards card ON card.board_id = board.id WHERE card.is_archived = FALSE AND card.due_date IS NOT NULL AND board.id = ?');
+        $stm->execute($val_array);
+        $all = $stm->fetchAll(PDO::FETCH_ASSOC);
+        $count = count($all);
         $ical = 'BEGIN:VCALENDAR' . "\r\n";
         $ical.= 'VERSION:2.0' . "\r\n";
         $ical.= 'PRODID:-//' . SITE_NAME . '//EN' . "\r\n";
@@ -30,7 +32,7 @@ if (!empty($_GET['id']) && !empty($_GET['hash'])) {
         $ical.= 'METHOD:PUBLISH' . "\r\n";
         if ($count > 0) {
             $event = $board_name = '';
-            while ($row = pg_fetch_assoc($result)) {
+            foreach ($all as $row) {
                 $board_name = $row['name'];
                 $event.= 'BEGIN:VEVENT' . "\r\n";
                 $event.= 'UID:' . $row['id'] . "\r\n";

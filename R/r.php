@@ -71,7 +71,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $conditions = array(
                 'access_token' => $_GET['refresh_token']
             );
-            $response = executeQuery("SELECT user_id as username, expires, scope, client_id FROM oauth_refresh_tokens WHERE refresh_token = $1", $conditions);
+            $response = executeQuery("SELECT user_id as username, expires, scope, client_id FROM oauth_refresh_tokens WHERE refresh_token = ?", $conditions);
             if ($response['client_id'] == 6664115227792148 && OAUTH_CLIENTID == 7742632501382313) {
                 $oauth_clientid = 6664115227792148;
                 $oauth_client_secret = 'hw3wpe2cfsxxygogwue47cwnf7';
@@ -93,7 +93,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $qry_val_arr = array(
                 3
             );
-            $role_links = executeQuery('SELECT * FROM role_links_listing WHERE id = $1', $qry_val_arr);
+            $role_links = executeQuery('SELECT * FROM role_links_listing WHERE id = ?', $qry_val_arr);
             $response = array_merge($response, $role_links);
             $files = glob(APP_PATH . '/client/locales/*/translation.json', GLOB_BRACE);
             $lang_iso2_codes = array();
@@ -134,11 +134,11 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $role_val_arr = array(
             $authUser['role_id']
         );
-        $role_links = executeQuery('SELECT * FROM role_links_listing WHERE id = $1', $role_val_arr);
+        $role_links = executeQuery('SELECT * FROM role_links_listing WHERE id = ?', $role_val_arr);
         $val_arr = array(
             $authUser['id']
         );
-        $user = executeQuery('SELECT * FROM users_listing WHERE id = $1', $val_arr);
+        $user = executeQuery('SELECT * FROM users_listing WHERE id = ?', $val_arr);
         $response = array_merge($role_links, $response);
         $board_ids = array();
         if (!empty($user['boards_users'])) {
@@ -151,7 +151,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $user['last_activity_id'],
             '{' . implode(',', $board_ids) . '}'
         );
-        $notify_count = executeQuery('SELECT max(id) AS last_activity_id, count(a.*) AS notify_count FROM activities a  WHERE a.id > $1 AND board_id = ANY ($2) ', $notify_val_arr);
+        $notify_count = executeQuery('SELECT max(id) AS last_activity_id, count(a.*) AS notify_count FROM activities a  WHERE a.id > ? AND board_id = ANY (?) ', $notify_val_arr);
         $notify_count['last_activity_id'] = (!empty($notify_count['last_activity_id'])) ? $notify_count['last_activity_id'] : $user['last_activity_id'];
         $user = array_merge($user, $notify_count);
         unset($user['user']['password']);
@@ -196,18 +196,18 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $val_array = array(
             true
         );
-        $active_count = executeQuery('SELECT count(*) FROM users WHERE is_active = $1', $val_array);
+        $active_count = executeQuery('SELECT count(*) FROM users WHERE is_active = ?', $val_array);
         $filter_count['active'] = $active_count['count'];
         $val_array = array(
             0
         );
-        $inactive_count = executeQuery('SELECT count(*) FROM users WHERE is_active = $1', $val_array);
+        $inactive_count = executeQuery('SELECT count(*) FROM users WHERE is_active = ?', $val_array);
         $filter_count['inactive'] = $inactive_count['count'];
         $val_array = array(
             true
         );
         if (is_plugin_enabled('r_ldap_login')) {
-            $ldap_count = executeQuery('SELECT count(*) FROM users WHERE is_ldap = $1', $val_array);
+            $ldap_count = executeQuery('SELECT count(*) FROM users WHERE is_ldap = ?', $val_array);
             $filter_count['ldap'] = $ldap_count['count'];
         }
         $val_array = array(
@@ -222,7 +222,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $val_array = array(
                 $row['id']
             );
-            $user_count = executeQuery('SELECT count(*) FROM users WHERE role_id = $1', $val_array);
+            $user_count = executeQuery('SELECT count(*) FROM users WHERE role_id = ?', $val_array);
             $roles[$i]['count'] = $user_count['count'];
             $i++;
         }
@@ -268,9 +268,9 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $condition = '';
         if (!empty($authUser) && $authUser['role_id'] == 1 && $authUser['id'] == $r_resource_vars['users'] && empty($r_resource_filters['board_id'])) {
             if (!empty($r_resource_filters['type']) && $r_resource_filters['type'] == 'profile') {
-                $condition = (!empty($r_resource_filters['last_activity_id'])) ? ' WHERE al.id < $1' : '';
+                $condition = (!empty($r_resource_filters['last_activity_id'])) ? ' WHERE al.id < ?' : '';
             } else {
-                $condition = (!empty($r_resource_filters['last_activity_id'])) ? ' WHERE al.id > $1' : '';
+                $condition = (!empty($r_resource_filters['last_activity_id'])) ? ' WHERE al.id > ?' : '';
             }
             $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al ' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
             $c_sql = 'SELECT COUNT(*) FROM activities_listing al' . $condition;
@@ -279,7 +279,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $val_array = array(
                     $authUser['id']
                 );
-                $logged_user = executeQuery('SELECT boards_users FROM users_listing WHERE id = $1', $val_array);
+                $logged_user = executeQuery('SELECT boards_users FROM users_listing WHERE id = ?', $val_array);
                 $logged_user_board_ids = array();
                 if (!empty($logged_user['boards_users'])) {
                     $logged_boards_users = json_decode($logged_user['boards_users'], true);
@@ -291,7 +291,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $val_array = array(
                 $r_resource_vars['users']
             );
-            $user = executeQuery('SELECT boards_users FROM users_listing WHERE id = $1', $val_array);
+            $user = executeQuery('SELECT boards_users FROM users_listing WHERE id = ?', $val_array);
             $board_ids = array();
             if (!empty($user['boards_users'])) {
                 $boards_users = json_decode($user['boards_users'], true);
@@ -313,42 +313,42 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 array_push($pg_params, $r_resource_vars['users']);
                 $i++;
                 if (!empty($logged_user_board_ids)) {
-                    $str.= ' AND board_id = ANY ( $' . $i . ' )';
+                    $str.= ' AND board_id = ANY ( ? )';
                     array_push($pg_params, '{' . implode(',', $board_ids) . '}');
                     $i++;
                 }
                 if (!empty($r_resource_filters['last_activity_id'])) {
-                    $str.= ' AND al.id < $' . $i;
+                    $str.= ' AND al.id < ?';
                 }
                 $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ' . $str . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
                 $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ' . $str;
             } else if (!empty($r_resource_filters['organization_id'])) {
                 if (!empty($r_resource_filters['last_activity_id'])) {
-                    $condition = ' AND al.id > $4';
+                    $condition = ' AND al.id > ?';
                 }
                 $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ((user_id = $1 AND board_id IN (SELECT id FROM boards WHERE organization_id = $2)) OR organization_id  = ANY ( $3 )) ' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
-                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ((user_id = $1 AND board_id IN (SELECT id FROM boards WHERE organization_id = $2)) OR organization_id  = ANY ( $3 )) ' . $condition;
+                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ((user_id = ? AND board_id IN (SELECT id FROM boards WHERE organization_id = ?)) OR organization_id  = ANY ( ? )) ' . $condition;
                 array_push($pg_params, $r_resource_vars['users'], $r_resource_filters['organization_id'], '{' . $r_resource_filters['organization_id'] . '}');
             } else if (!empty($r_resource_filters['type']) && $r_resource_filters['type'] = 'all') {
                 if (!empty($r_resource_filters['last_activity_id'])) {
-                    $condition = ' AND al.id > $3';
+                    $condition = ' AND al.id > ?';
                 }
                 $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE (board_id = ANY ( $1 ) OR organization_id  = ANY ( $2 ))' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
-                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE (board_id = ANY ( $1 ) OR organization_id  = ANY ( $2 ))' . $condition;
+                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE (board_id = ANY ( ? ) OR organization_id  = ANY ( ? ))' . $condition;
                 array_push($pg_params, '{' . implode(',', $board_ids) . '}', '{' . implode(',', $org_ids) . '}');
             } else if (!empty($r_resource_filters['board_id']) && $r_resource_filters['board_id']) {
                 if (!empty($r_resource_filters['last_activity_id'])) {
-                    $condition = ' AND al.id > $3';
+                    $condition = ' AND al.id > ?';
                 }
                 $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE user_id = $1 AND board_id = $2' . $condition . ' ORDER BY freshness_ts DESC, materialized_path ASC LIMIT ' . PAGING_COUNT . ') as d';
-                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE user_id = $1 AND board_id = $2' . $condition;
+                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE user_id = ? AND board_id = ?' . $condition;
                 array_push($pg_params, $r_resource_vars['users'], $r_resource_filters['board_id']);
             } else {
                 if (!empty($r_resource_filters['last_activity_id'])) {
-                    $condition = ' AND al.id > $3';
+                    $condition = ' AND al.id > ?';
                 }
                 $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ( board_id = ANY( $1 ) OR organization_id  = ANY ( $2 ) )' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
-                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ( board_id = ANY( $1 ) OR organization_id  = ANY ( $2 ) )' . $condition;
+                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ( board_id = ANY( ? ) OR organization_id  = ANY ( ? ) )' . $condition;
                 array_push($pg_params, '{' . implode(',', $board_ids) . '}', '{' . implode(',', $org_ids) . '}');
             }
         }
@@ -495,7 +495,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $val_array = array(
                 $authUser['id']
             );
-            $logged_user = executeQuery('SELECT boards_users FROM users_listing WHERE id = $1', $val_array);
+            $logged_user = executeQuery('SELECT boards_users FROM users_listing WHERE id = ?', $val_array);
             if (!empty($logged_user['boards_users'])) {
                 $logged_boards_users = json_decode($logged_user['boards_users'], true);
                 foreach ($logged_boards_users as $logged_boards_user) {
@@ -623,12 +623,12 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $val_array = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_stars WHERE user_id = $1', $val_array);
+                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_stars WHERE user_id = ?', $val_array);
                 $response['starred_boards'] = array();
                 while ($row = pg_fetch_assoc($s_result)) {
                     $response['starred_boards'][] = $row['board_id'];
                 }
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = $1', $val_array);
+                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = ?', $val_array);
                 $response['user_boards'] = array();
                 while ($row = pg_fetch_assoc($s_result)) {
                     $response['user_boards'][] = $row['board_id'];
@@ -648,7 +648,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             $limit = 'all';
             if (!empty($pg_params)) {
-                $c_sql = 'SELECT COUNT(*) FROM simple_board_listing ul WHERE ul.id =ANY($1)' . $filter_condition;
+                $c_sql = 'SELECT COUNT(*) FROM simple_board_listing ul WHERE ul.id =ANY(?)' . $filter_condition;
             } else {
                 $c_sql = 'SELECT COUNT(*) FROM simple_board_listing ul ' . $filter_condition;
             }
@@ -715,27 +715,27 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $val_array = array(
             true
         );
-        $closed_count = executeQuery('SELECT count(*) FROM boards WHERE is_closed = $1', $val_array);
+        $closed_count = executeQuery('SELECT count(*) FROM boards WHERE is_closed = ?', $val_array);
         $filter_count['closed'] = $closed_count['count'];
         $val_array = array(
             0
         );
-        $open_count = executeQuery('SELECT count(*) FROM boards WHERE is_closed = $1', $val_array);
+        $open_count = executeQuery('SELECT count(*) FROM boards WHERE is_closed = ?', $val_array);
         $filter_count['open'] = $open_count['count'];
         $val_array = array(
             0
         );
-        $private_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = $1', $val_array);
+        $private_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = ?', $val_array);
         $filter_count['private'] = $private_count['count'];
         $val_array = array(
             2
         );
-        $public_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = $1', $val_array);
+        $public_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = ?', $val_array);
         $filter_count['public'] = $public_count['count'];
         $val_array = array(
             1
         );
-        $organization_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = $1', $val_array);
+        $organization_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = ?', $val_array);
         $filter_count['organization'] = $organization_count['count'];
         $board_user_roles_result = pg_query_params($db_lnk, 'SELECT id, name FROM board_user_roles', array());
         $board_user_roles = array();
@@ -885,15 +885,15 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
 
     case '/boards/?':
         $board = array();
-        $s_sql = 'SELECT id FROM boards WHERE id =  $1';
+        $s_sql = 'SELECT id FROM boards WHERE id =  ?';
         $board[] = $r_resource_vars['boards'];
         $check_board = executeQuery($s_sql, $board);
         if (!empty($check_board)) {
-            $s_sql = 'SELECT b.board_visibility, bu.user_id FROM boards AS b LEFT JOIN boards_users AS bu ON bu.board_id = b.id WHERE b.id =  $1';
+            $s_sql = 'SELECT b.board_visibility, bu.user_id FROM boards AS b LEFT JOIN boards_users AS bu ON bu.board_id = b.id WHERE b.id =  ?';
             $arr = array();
             $arr[] = $r_resource_vars['boards'];
             if (!empty($authUser) && $authUser['role_id'] != 1) {
-                $s_sql.= ' AND (b.board_visibility = 2 OR bu.user_id = $2)';
+                $s_sql.= ' AND (b.board_visibility = 2 OR bu.user_id = ?)';
                 $arr[] = $authUser['id'];
             } else if (empty($authUser)) {
                 $s_sql.= ' AND b.board_visibility = 2 ';
@@ -1058,11 +1058,11 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         break;
 
     case '/organizations/?':
-        $s_sql = 'SELECT o.organization_visibility, ou.user_id FROM organizations AS o LEFT JOIN organizations_users AS ou ON ou.organization_id = o.id WHERE o.id =  $1';
+        $s_sql = 'SELECT o.organization_visibility, ou.user_id FROM organizations AS o LEFT JOIN organizations_users AS ou ON ou.organization_id = o.id WHERE o.id =  ?';
         $arr = array();
         $arr[] = $r_resource_vars['organizations'];
         if (!empty($authUser) && $authUser['role_id'] != 1) {
-            $s_sql.= ' AND (o.organization_visibility = 1 OR ou.user_id = $2)';
+            $s_sql.= ' AND (o.organization_visibility = 1 OR ou.user_id = ?)';
             $arr[] = $authUser['id'];
         } else if (empty($authUser)) {
             $s_sql.= ' AND o.organization_visibility = 1 ';
@@ -1108,35 +1108,35 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $val_array = array(
             $r_resource_vars['boards']
         );
-        $board = executeQuery('SELECT board_visibility FROM boards_listing WHERE id = $1', $val_array);
+        $board = executeQuery('SELECT board_visibility FROM boards_listing WHERE id = ?', $val_array);
         $val_array = array(
             $r_resource_vars['boards'],
             $authUser['id']
         );
-        $boards_user = executeQuery('SELECT * FROM boards_users WHERE board_id = $1 AND user_id = $2', $val_array);
+        $boards_user = executeQuery('SELECT * FROM boards_users WHERE board_id = ? AND user_id = ?', $val_array);
         if ((!empty($authUser) && $authUser['role_id'] == 1) || $board['board_visibility'] == 2 || !empty($boards_user)) {
             $condition = '';
             array_push($pg_params, $r_resource_vars['boards']);
             $i = 2;
             if (isset($r_resource_filters['last_activity_id']) && $r_resource_filters['last_activity_id'] > 0) {
                 if (!empty($r_resource_filters['type']) && $r_resource_filters['type'] == 'all') {
-                    $condition = ' AND al.id < $' . $i;
+                    $condition = ' AND al.id < ?';
                 } else {
-                    $condition = ' AND al.id > $' . $i;
+                    $condition = ' AND al.id > ?';
                 }
                 array_push($pg_params, $r_resource_filters['last_activity_id']);
                 $i++;
             }
             if (!empty($r_resource_vars['cards'])) {
-                $condition.= ' AND al.card_id = $' . $i;
+                $condition.= ' AND al.card_id = ?';
                 array_push($pg_params, $r_resource_vars['cards']);
             } else if (!empty($r_resource_vars['lists'])) {
-                $condition.= ' AND al.list_id = $' . $i;
+                $condition.= ' AND al.list_id = ?';
                 array_push($pg_params, $r_resource_vars['lists']);
                 $i++;
             }
             if (!empty($r_resource_filters['filter'])) {
-                $condition.= ' AND al.type = $' . $i;
+                $condition.= ' AND al.type = ?';
                 array_push($pg_params, $r_resource_filters['filter']);
                 $i++;
             }
@@ -1144,9 +1144,9 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             if (!empty($r_resource_filters['limit'])) {
                 $limit = $r_resource_filters['limit'];
             }
-            $sql = 'SELECT row_to_json(d) FROM (SELECT al.*, u.username, u.profile_picture_path, u.initials, u.full_name, c.description, c.name as card_name FROM activities_listing al LEFT JOIN users u ON al.user_id = u.id LEFT JOIN cards c on al.card_id = c.id WHERE al.board_id = $1' . $condition . ' ORDER BY al.id DESC LIMIT ' . $limit . ') as d ';
+            $sql = 'SELECT row_to_json(d) FROM (SELECT al.*, u.username, u.profile_picture_path, u.initials, u.full_name, c.description, c.name as card_name FROM activities_listing al LEFT JOIN users u ON al.user_id = u.id LEFT JOIN cards c on al.card_id = c.id WHERE al.board_id = ?' . $condition . ' ORDER BY al.id DESC LIMIT ' . $limit . ') as d ';
             if (empty($r_resource_filters['from']) || (!empty($r_resource_filters['from']) && $r_resource_filters['from'] != 'app')) {
-                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE al.board_id = $1' . $condition;
+                $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE al.board_id =?' . $condition;
             }
             if (!empty($c_sql)) {
                 $paging_data = paginate_data($c_sql, $db_lnk, $pg_params, $r_resource_filters);
@@ -1348,12 +1348,12 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $i = 1;
         $_metadata = array();
         if (isset($r_resource_filters['last_activity_id'])) {
-            $condition = ' WHERE al.id < $' . $i;
+            $condition = ' WHERE al.id < ?';
             array_push($pg_params, $r_resource_filters['last_activity_id']);
             $i++;
         }
         if (!empty($r_resource_filters['filter'])) {
-            $condition.= ' AND al.type = $' . $i;
+            $condition.= ' AND al.type = ?';
             array_push($pg_params, $r_resource_filters['filter']);
             $i++;
         }
@@ -1651,7 +1651,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $_metadata = array();
         $sql = 'SELECT row_to_json(d) FROM (SELECT DISTINCT ON (ort.client_id) ort.client_id, oc.client_name FROM oauth_refresh_tokens ort LEFT JOIN oauth_clients oc ON ort.client_id = oc.client_id WHERE ort.user_id = $1 AND ort.client_id != $2) as d ';
         array_push($pg_params, $authUser['username'], '7742632501382313');
-        $c_sql = 'SELECT COUNT(*) FROM (SELECT DISTINCT ON (ort.client_id) ort.client_id, oc.client_name FROM oauth_refresh_tokens ort LEFT JOIN oauth_clients oc ON ort.client_id = oc.client_id WHERE ort.user_id = $1 AND ort.client_id != $2) As oc';
+        $c_sql = 'SELECT COUNT(*) FROM (SELECT DISTINCT ON (ort.client_id) ort.client_id, oc.client_name FROM oauth_refresh_tokens ort LEFT JOIN oauth_clients oc ON ort.client_id = oc.client_id WHERE ort.user_id = ? AND ort.client_id != ?) As oc';
         if (!empty($c_sql)) {
             $paging_data = paginate_data($c_sql, $db_lnk, $pg_params, $r_resource_filters);
             $sql.= $paging_data['sql'];
@@ -1889,14 +1889,14 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
         $val_arr = array(
             $r_post['email']
         );
-        $user = executeQuery('SELECT * FROM users WHERE email = $1 AND is_active = true', $val_arr);
+        $user = executeQuery('SELECT * FROM users WHERE email = ? AND is_active = true', $val_arr);
         if ($user) {
             $password = uniqid();
             $val_arr = array(
                 getCryptHash($password) ,
                 $user['id']
             );
-            pg_query_params($db_lnk, 'UPDATE users SET (password) = ($1) WHERE id = $2', $val_arr);
+            pg_query_params($db_lnk, 'UPDATE users SET password = ? WHERE id = ?', $val_arr);
             $emailFindReplace = array(
                 '##NAME##' => $user['full_name'],
                 '##PASSWORD##' => $password,
@@ -1919,7 +1919,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_post['username'],
             $r_post['email']
         );
-        $user = executeQuery('SELECT * FROM users WHERE username = $1 OR email = $2', $val_arr);
+        $user = executeQuery('SELECT * FROM users WHERE username = ? OR email = ?', $val_arr);
         if (!$user) {
             $sql = true;
             $table_name = 'users';
@@ -1937,7 +1937,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $post = getbindValues($table_name, $r_post);
                 $result = pg_execute_insert($table_name, $post);
                 if ($result) {
-                    $row = pg_fetch_assoc($result);
+                    $row = $result;
                     $response['id'] = $row['id'];
                     if ($is_return_vlaue) {
                         $row = convertBooleanValues($table_name, $row);
@@ -1971,7 +1971,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_post['username'],
             $r_post['email']
         );
-        $user = executeQuery('SELECT * FROM users WHERE (username = $1 AND username<>\'\') OR (email = $2 AND email<>\'\')', $val_arr);
+        $user = executeQuery('SELECT * FROM users WHERE (username = ? AND username<>\'\') OR (email = ? AND email<>\'\')', $val_arr);
         if (!$user) {
             $sql = true;
             $table_name = 'users';
@@ -1987,7 +1987,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $post = getbindValues($table_name, $r_post);
                 $result = pg_execute_insert($table_name, $post);
                 if ($result) {
-                    $row = pg_fetch_assoc($result);
+                    $row = $result;
                     $response['id'] = $row['id'];
                     if ($is_return_vlaue) {
                         $row = convertBooleanValues($table_name, $row);
@@ -2018,9 +2018,9 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
     case '/users/login': //users login
         $table_name = 'users';
         $val_arr = array(
-            $r_post['email']
+            ':email' => $r_post['email']
         );
-        $log_user = executeQuery('SELECT id, role_id, password, is_ldap::boolean::int FROM users WHERE email = $1 or username = $1', $val_arr);
+        $log_user = executeQuery('SELECT id, role_id, password, is_ldap::boolean::int FROM users WHERE email = :email or username = :email', $val_arr);
         if (is_plugin_enabled('r_ldap_login')) {
             require_once APP_PATH . DIRECTORY_SEPARATOR . 'server' . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'plugins' . DIRECTORY_SEPARATOR . 'LdapLogin' . DIRECTORY_SEPARATOR . 'functions.php';
             $ldap_response = ldapUpdateUser($log_user, $r_post);
@@ -2030,11 +2030,11 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
         if (!empty($log_user) && $log_user['is_ldap'] == 0) {
             $r_post['password'] = crypt($r_post['password'], $log_user['password']);
             $val_arr = array(
-                $r_post['email'],
-                $r_post['password'],
-                1
+                ':email' => $r_post['email'],
+                ':pass' => $r_post['password'],
+                ':active' => 1
             );
-            $user = executeQuery('SELECT * FROM users_listing WHERE (email = $1 or username = $1) AND password = $2 AND is_active = $3', $val_arr);
+            $user = executeQuery('SELECT * FROM users_listing WHERE (email = :email or username = :email) AND password = :pass AND is_active = :active', $val_arr);
         }
         if (!empty($user)) {
             if (is_plugin_enabled('r_ldap_login')) {
@@ -2060,7 +2060,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $role_val_arr = array(
                 $user['role_id']
             );
-            $role_links = executeQuery('SELECT links FROM role_links_listing WHERE id = $1', $role_val_arr);
+            $role_links = executeQuery('SELECT links FROM role_links_listing WHERE id = ?', $role_val_arr);
             $post_val = array(
                 'grant_type' => 'password',
                 'username' => $user['username'],
@@ -2082,7 +2082,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $user['last_activity_id'],
                 '{' . implode(',', $board_ids) . '}'
             );
-            $notify_count = executeQuery('SELECT max(id) AS last_activity_id, count(a.*) AS notify_count FROM activities a  WHERE a.id > $1 AND board_id = ANY ($2) ', $notify_val_arr);
+            $notify_count = executeQuery('SELECT max(id) AS last_activity_id, count(a.*) AS notify_count FROM activities a  WHERE a.id > ? AND board_id = ANY (?) ', $notify_val_arr);
             $notify_count['last_activity_id'] = (!empty($notify_count['last_activity_id'])) ? $notify_count['last_activity_id'] : $user['last_activity_id'];
             $user = array_merge($user, $notify_count);
             $response['user'] = $user;
@@ -2120,7 +2120,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 'error' => 'Passwords can\'t be empty.'
             );
         } else if ($r_post['confirm_password'] == $r_post['password']) {
-            $user = executeQuery('SELECT * FROM users WHERE id = $1', $qry_val_array);
+            $user = executeQuery('SELECT * FROM users WHERE id = ?', $qry_val_array);
             if ($user) {
                 $res_val_arr = array(
                     getCryptHash($r_post['password']) ,
@@ -2173,7 +2173,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 'error' => 'Passwords can\'t be empty.'
             );
         } else if ($r_post['confirm_password'] == $r_post['password']) {
-            $user = executeQuery('SELECT * FROM users WHERE id = $1', $qry_val_array);
+            $user = executeQuery('SELECT * FROM users WHERE id = ?', $qry_val_array);
             if ($user) {
                 $cry_old_pass = crypt($r_post['old_password'], $user['password']);
                 if ((($authUser['role_id'] == 2) && ($user['password'] == $cry_old_pass)) || ($authUser['role_id'] == 1)) {
@@ -2269,7 +2269,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $usr_val_arr = array(
                     $_POST['email']
                 );
-                $user = executeQuery('SELECT * FROM users WHERE email = $1', $usr_val_arr);
+                $user = executeQuery('SELECT * FROM users WHERE email = ?', $usr_val_arr);
                 if ($user['id'] != $r_resource_vars['users'] && $user['email'] == $_POST['email']) {
                     $no_error = false;
                     $msg = 2;
@@ -2307,7 +2307,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $qry_va_arr = array(
                             $id
                         );
-                        $revisions['old_value'] = executeQuery('SELECT ' . $sfields . ' FROM ' . $table_name . ' WHERE id =  $1', $qry_va_arr);
+                        $revisions['old_value'] = executeQuery('SELECT ' . $sfields . ' FROM ' . $table_name . ' WHERE id =  ?', $qry_va_arr);
                         unset($revisions['old_value']['is_send_newsletter']);
                         unset($_POST['is_send_newsletter']);
                         $temp_revisions = array_diff($revisions['old_value'], $_POST);
@@ -2402,7 +2402,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $qry_val_arr = array(
                 $r_post['name']
             );
-            executeQuery('SELECT id, name FROM ' . $table_name . ' WHERE name = $1', $qry_val_arr);
+            executeQuery('SELECT id, name FROM ' . $table_name . ' WHERE name = ?', $qry_val_arr);
             if (isset($r_post['template']) && !empty($r_post['template'])) {
                 $lists = explode(',', $r_post['template']);
             }
@@ -2414,7 +2414,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 $response['name'] = $row['name'];
                 if ($is_return_vlaue) {
@@ -2483,7 +2483,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $qry_val_arr = array(
                         $row['id']
                     );
-                    $response['simple_board'] = executeQuery('SELECT row_to_json(d) FROM (SELECT * FROM simple_board_listing sbl WHERE id = $1 ORDER BY id ASC) as d', $qry_val_arr);
+                    $response['simple_board'] = executeQuery('SELECT row_to_json(d) FROM (SELECT * FROM simple_board_listing sbl WHERE id = ? ORDER BY id ASC) as d', $qry_val_arr);
                     $response['simple_board'] = json_decode($response['simple_board']['row_to_json'], true);
                 }
             }
@@ -2497,7 +2497,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['boards'],
             $authUser['id']
         );
-        $subcriber = executeQuery('SELECT id, is_starred FROM ' . $table_name . ' WHERE board_id = $1 and user_id = $2', $qry_val_arr);
+        $subcriber = executeQuery('SELECT id, is_starred FROM ' . $table_name . ' WHERE board_id = ? and user_id = ?', $qry_val_arr);
         if (!$subcriber) {
             $qry_val_arr = array(
                 $r_resource_vars['boards'],
@@ -2555,7 +2555,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['boards'],
             $authUser['id']
         );
-        $subcriber = executeQuery('SELECT id, is_subscribed FROM ' . $table_name . ' WHERE board_id = $1 and user_id = $2', $qry_val_arr);
+        $subcriber = executeQuery('SELECT id, is_subscribed FROM ' . $table_name . ' WHERE board_id = ? and user_id = ?', $qry_val_arr);
         if (!$subcriber) {
             $qry_val_arr = array(
                 $r_resource_vars['boards'],
@@ -2624,7 +2624,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if ($is_return_vlaue) {
                     $row = convertBooleanValues($table_name, $row);
@@ -3115,7 +3115,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['boards'],
             $r_post['user_id']
         );
-        $boards_user = executeQuery('SELECT * FROM boards_users WHERE board_id = $1 AND user_id = $2', $qry_val_arr);
+        $boards_user = executeQuery('SELECT * FROM boards_users WHERE board_id = ? AND user_id = ?', $qry_val_arr);
         if (empty($boards_user)) {
             $sql = true;
         }
@@ -3123,7 +3123,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if ($is_return_vlaue) {
                     $row = convertBooleanValues($table_name, $row);
@@ -3139,7 +3139,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['user_id']
                 );
-                $user = executeQuery('SELECT * FROM users WHERE id = $1', $qry_val_arr);
+                $user = executeQuery('SELECT * FROM users WHERE id = ?', $qry_val_arr);
                 if ($user) {
                     $emailFindReplace = array(
                         '##NAME##' => $user['full_name'],
@@ -3173,7 +3173,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if ($is_return_vlaue) {
                     $row = convertBooleanValues($table_name, $row);
@@ -3191,8 +3191,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $qry_val_arr = array(
                         $clone_list_id
                     );
-                    $cards = pg_query_params($db_lnk, 'SELECT id, ' . $card_fields . ' FROM cards WHERE list_id = $1 ORDER BY id', $qry_val_arr);
-                    if (pg_num_rows($cards)) {
+                    $stm = $db_lnk->prepare('SELECT id, ' . $card_fields . ' FROM cards WHERE list_id = ? ORDER BY id');
+                    $stm->execute($qry_val_arr);
+                    $cards = $stm->fetchAll(PDO::FETCH_ASSOC);
+                    if (count($cards) > 0) {
                         copyCards($cards, $new_list_id, $post['name'], $foreign_ids['board_id']);
                     }
                 }
@@ -3258,7 +3260,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['board_id']
                 );
-                $list_count = executeQuery('SELECT count(*) as count FROM lists WHERE board_id = $1', $qry_val_arr);
+                $list_count = executeQuery('SELECT count(*) as count FROM lists WHERE board_id = ?', $qry_val_arr);
                 if ($list_count['count'] == 1) {
                     $qry_val_arr = array(
                         $r_post['board_id'],
@@ -3296,7 +3298,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
             }
         }
@@ -3326,7 +3328,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 $qry_val_arr = array(
                     $r_post['list_id']
@@ -3346,7 +3348,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $qry_val_arr = array(
                             $member
                         );
-                        $_user = executeQuery('SELECT username FROM users WHERE id = $1', $qry_val_arr);
+                        $_user = executeQuery('SELECT username FROM users WHERE id = ?', $qry_val_arr);
                         $comment = '##USER_NAME## added "' . $_user['username'] . '" as member to this card ##CARD_LINK##';
                         $response['activity'] = insertActivity($authUser['id'], $comment, 'add_card_user', $foreign_ids, '', $card_user['id']);
                     }
@@ -3412,7 +3414,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $qry_val_arr = array(
                 $r_post['root']
             );
-            $prev_message = executeQuery('SELECT ac.*, u,username, u.profile_picture_path, u.initials, u.full_name FROM activities ac LEFT JOIN users u ON ac.user_id = u.id WHERE ac.id = $1 order by created DESC', $qry_val_arr);
+            $prev_message = executeQuery('SELECT ac.*, u,username, u.profile_picture_path, u.initials, u.full_name FROM activities ac LEFT JOIN users u ON ac.user_id = u.id WHERE ac.id = ? order by created DESC', $qry_val_arr);
         }
         $r_post['freshness_ts'] = date('Y-m-d h:i:s');
         $r_post['type'] = 'add_comment';
@@ -3423,13 +3425,13 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['activities']['created'] = $row['created'];
                 $response['id'] = $row['id'];
                 $conditions = array(
                     $r_post['card_id']
                 );
-                $activity_count = executeQuery("SELECT COUNT(id) as total_count FROM activities WHERE type = 'add_comment' AND card_id = $1", $conditions);
+                $activity_count = executeQuery("SELECT COUNT(id) as total_count FROM activities WHERE type = 'add_comment' AND card_id = ?", $conditions);
                 $activity_count = (!empty($activity_count)) ? $activity_count['total_count'] : 0;
                 $qry_val_arr = array(
                     $activity_count,
@@ -3526,7 +3528,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $post = getbindValues($table_name, $r_post);
                 $result = pg_execute_insert($table_name, $post);
                 if ($result) {
-                    $row = pg_fetch_assoc($result);
+                    $row = $result;
                     $response['id'] = $row['id'];
                 }
             }
@@ -3542,7 +3544,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_post['card_id'],
             $r_post['user_id']
         );
-        $check_already_added = executeQuery('SELECT * FROM card_voters WHERE card_id = $1 AND user_id = $2', $qry_val_arr);
+        $check_already_added = executeQuery('SELECT * FROM card_voters WHERE card_id = ? AND user_id = ?', $qry_val_arr);
         if (!empty($check_already_added)) {
             $response['id'] = $check_already_added['id'];
             $response['cards_voters'] = $check_already_added;
@@ -3554,7 +3556,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $post = getbindValues($table_name, $r_post);
                 $result = pg_execute_insert($table_name, $post);
                 if ($result) {
-                    $row = pg_fetch_assoc($result);
+                    $row = $result;
                     $response['id'] = $row['id'];
                     $foreign_ids['board_id'] = $r_resource_vars['boards'];
                     $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -3696,7 +3698,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $post = getbindValues($table_name, $r_post);
                     $result = pg_execute_insert($table_name, $post);
                     if ($result) {
-                        $row = pg_fetch_assoc($result);
+                        $row = $result;
                         $response['card_attachments'] = $row;
                         $foreign_ids['board_id'] = $r_post['board_id'];
                         $foreign_ids['list_id'] = $r_post['list_id'];
@@ -3790,7 +3792,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if (isset($checklist_id) && !empty($checklist_id)) {
                     $qry_val_arr = array(
@@ -3835,7 +3837,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['checklist_id']
                 );
-                $position = executeQuery('SELECT max(position) as position FROM checklist_items WHERE checklist_id = $1', $qry_val_arr);
+                $position = executeQuery('SELECT max(position) as position FROM checklist_items WHERE checklist_id = ?', $qry_val_arr);
                 $r_post['position'] = $position['position'];
                 if (empty($r_post['position'])) {
                     $r_post['position'] = 0;
@@ -3845,7 +3847,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     unset($r_post['member']);
                 }
                 $result = pg_execute_insert($table_name, $r_post);
-                $item = pg_fetch_assoc($result);
+                $item = $result;
                 $response[$table_name][] = $item;
                 $foreign_ids['board_id'] = $r_resource_vars['boards'];
                 $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -3880,7 +3882,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if ($is_return_vlaue) {
                     $row = convertBooleanValues($table_name, $row);
@@ -3904,7 +3906,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $qry_val_arr = array(
                             $member
                         );
-                        $_user = executeQuery('SELECT username FROM users WHERE id = $1', $qry_val_arr);
+                        $_user = executeQuery('SELECT username FROM users WHERE id = ?', $qry_val_arr);
                         $comment = '##USER_NAME## added "' . $_user['username'] . '" as member to this card ##CARD_LINK##';
                         $response['activity'] = insertActivity($authUser['id'], $comment, 'add_card_user', $foreign_ids, '', $card_user['id']);
                     }
@@ -3974,7 +3976,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['cards'],
             $r_resource_vars['users']
         );
-        $check_already_added = executeQuery('SELECT * FROM cards_users WHERE card_id = $1 AND user_id = $2', $qry_val_arr);
+        $check_already_added = executeQuery('SELECT * FROM cards_users WHERE card_id = ? AND user_id = ?', $qry_val_arr);
         if (!empty($check_already_added)) {
             $response['id'] = $check_already_added['id'];
             $response['cards_users'] = $check_already_added;
@@ -3984,7 +3986,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $post = getbindValues($table_name, $r_post);
                 $result = pg_execute_insert($table_name, $post);
                 if ($result) {
-                    $row = pg_fetch_assoc($result);
+                    $row = $result;
                     $response['id'] = $row['id'];
                     if ($is_return_vlaue) {
                         $row = convertBooleanValues($table_name, $row);
@@ -4068,7 +4070,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if ($is_return_vlaue) {
                     $row = convertBooleanValues($table_name, $row);
@@ -4146,7 +4148,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $response['cards'] = executeQuery('SELECT * FROM cards_listing WHERE id = $1', $qry_val_arr);
+                $response['cards'] = executeQuery('SELECT * FROM cards_listing WHERE id = ?', $qry_val_arr);
                 if (!empty($response['cards']['cards_checklists'])) {
                     $response['cards']['cards_checklists'] = json_decode($response['cards']['cards_checklists'], true);
                 }
@@ -4165,7 +4167,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $activities = executeQuery('SELECT ( SELECT array_to_json(array_agg(row_to_json(cl.*))) AS array_to_json  FROM ( SELECT activities_listing.* FROM activities_listing activities_listing WHERE (activities_listing.card_id = cards.id) ORDER BY activities_listing.id DESC) cl) AS activities FROM cards cards WHERE id = $1', $qry_val_arr);
+                $activities = executeQuery('SELECT ( SELECT array_to_json(array_agg(row_to_json(cl.*))) AS array_to_json  FROM ( SELECT activities_listing.* FROM activities_listing activities_listing WHERE (activities_listing.card_id = cards.id) ORDER BY activities_listing.id DESC) cl) AS activities FROM cards cards WHERE id = ?', $qry_val_arr);
                 if (!empty($activities)) {
                     $response['cards']['activities'] = json_decode($activities['activities'], true);
                 }
@@ -4191,7 +4193,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 if ($is_return_vlaue) {
                     $row = convertBooleanValues($table_name, $row);
@@ -4204,7 +4206,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $foreign_id = $response['id'];
                 $comment = '##USER_NAME## added member to organization';
                 $response['activity'] = insertActivity($authUser['id'], $comment, 'add_organization_user', $foreign_ids, null, $foreign_id);
-                $response['organizations_users'] = executeQuery('SELECT * FROM organizations_users_listing WHERE id = $1', $qry_val_arr);
+                $response['organizations_users'] = executeQuery('SELECT * FROM organizations_users_listing WHERE id = ?', $qry_val_arr);
                 $response['organizations_users']['boards_users'] = json_decode($response['organizations_users']['boards_users'], true);
                 $qry_val_arr = array(
                     $r_post['organization_id']
@@ -4242,7 +4244,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
                 $qry_val_arr = array(
                     $row['id'],
@@ -4334,7 +4336,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_post['acl_link_id'],
             $r_post['role_id']
         );
-        $acl = executeQuery('SELECT * FROM ' . $table_name . ' WHERE ' . $colmns[$table_name][0] . ' = $1 AND ' . $colmns[$table_name][1] . ' = $2', $qry_val_arr);
+        $acl = executeQuery('SELECT * FROM ' . $table_name . ' WHERE ' . $colmns[$table_name][0] . ' = ? AND ' . $colmns[$table_name][1] . ' = ?', $qry_val_arr);
         if ($acl) {
             $qry_val_arr = array(
                 $r_post['acl_link_id'],
@@ -4400,7 +4402,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
             }
         }
@@ -4414,7 +4416,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
             }
         }
@@ -4428,7 +4430,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
             }
         }
@@ -4442,7 +4444,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
             }
         }
@@ -4456,7 +4458,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $post = getbindValues($table_name, $r_post);
             $result = pg_execute_insert($table_name, $post);
             if ($result) {
-                $row = pg_fetch_assoc($result);
+                $row = $result;
                 $response['id'] = $row['id'];
             }
         }
@@ -4537,7 +4539,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $r_put['id'],
             'false'
         );
-        $user = executeQuery('SELECT * FROM users WHERE id = $1 AND is_email_confirmed = $2', $qry_val_arr);
+        $user = executeQuery('SELECT * FROM users WHERE id = ? AND is_email_confirmed = ?', $qry_val_arr);
         if ($user && (md5($user['username']) == $r_put['hash'])) {
             $qry_val_arr = array(
                 'true',
@@ -4635,7 +4637,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $r_resource_vars['boards_users']
         );
-        executeQuery('SELECT id FROM ' . $table_name . ' WHERE id =  $1', $qry_val_arr);
+        executeQuery('SELECT id FROM ' . $table_name . ' WHERE id =  ?', $qry_val_arr);
         $response = update_query($table_name, $id, $r_resource_cmd, $r_put);
         echo json_encode($response);
         break;
@@ -4646,7 +4648,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $r_resource_vars['boards']
         );
-        $previous_value = executeQuery('SELECT * FROM ' . $table_name . ' WHERE id = $1', $qry_val_arr);
+        $previous_value = executeQuery('SELECT * FROM ' . $table_name . ' WHERE id = ?', $qry_val_arr);
         $board_visibility = array(
             'Private',
             'Organization',
@@ -4777,7 +4779,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $foreign_ids['list_id']
         );
-        $old_list = executeQuery('SELECT name FROM lists WHERE id = $1', $qry_val_arr);
+        $old_list = executeQuery('SELECT name FROM lists WHERE id = ?', $qry_val_arr);
         if (!empty($r_put['list_id'])) {
             $qry_val_arr = array(
                 $r_put['list_id'],
@@ -4792,7 +4794,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $qry_val_array = array(
                 $r_put['list_id']
             );
-            $new_list = executeQuery('SELECT name FROM lists WHERE id =  $1', $qry_val_array);
+            $new_list = executeQuery('SELECT name FROM lists WHERE id = ?', $qry_val_array);
             $comment = '##USER_NAME## moved cards FROM ' . $old_list['name'] . ' to ' . $new_list['name'];
             $activity_type = 'moved_list_card';
             $revisions['old_value']['list_id'] = $foreign_ids['list_id'];
@@ -4849,7 +4851,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $qry_val_arr = array(
                 $current_list_id
             );
-            $current_list_name = executeQuery('SELECT name FROM lists WHERE id =  $1', $qry_val_arr);
+            $current_list_name = executeQuery('SELECT name FROM lists WHERE id = ?', $qry_val_arr);
             $comment = '##USER_NAME## moved the card ##CARD_LINK## to ' . $current_list_name['name'];
             $activity_type = 'change_card_position';
             if (!empty($r_put['list_id'])) {
@@ -5029,7 +5031,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $r_resource_vars['items']
         );
-        $prev_value = executeQuery('SELECT * FROM ' . $table_name . ' WHERE id =  $1', $qry_val_arr);
+        $prev_value = executeQuery('SELECT * FROM ' . $table_name . ' WHERE id =  ?', $qry_val_arr);
         $activity_type = 'update_card_checklist_item';
         if (!empty($r_put['is_completed'])) {
             $comment = '##USER_NAME## updated ##CHECKLIST_ITEM_NAME## as completed on card ##CARD_LINK##';
@@ -5052,7 +5054,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $r_resource_vars['undo']
         );
         $comment = '';
-        $activity = executeQuery('SELECT * FROM activities WHERE id =  $1', $qry_val_arr);
+        $activity = executeQuery('SELECT * FROM activities WHERE id =  ?', $qry_val_arr);
         if (!empty($activity['revisions']) && trim($activity['revisions']) != '') {
             $revisions = unserialize($activity['revisions']);
             if ($activity['type'] == 'update_card_checklist_item') {
@@ -5196,7 +5198,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $r_resource_vars['organizations']
         );
-        executeQuery('SELECT id FROM ' . $table_name . ' WHERE id = $1', $qry_val_arr);
+        executeQuery('SELECT id FROM ' . $table_name . ' WHERE id = ?', $qry_val_arr);
         $response = update_query($table_name, $id, $r_resource_cmd, $r_put, $comment, $activity_type, $foreign_ids);
         echo json_encode($response);
         break;
@@ -5208,7 +5210,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $r_resource_vars['organizations_users']
         );
-        executeQuery('SELECT id FROM ' . $table_name . ' WHERE id =  $1', $qry_val_arr);
+        executeQuery('SELECT id FROM ' . $table_name . ' WHERE id =  ?', $qry_val_arr);
         $response = update_query($table_name, $id, $r_resource_cmd, $r_put);
         echo json_encode($response);
         break;
@@ -5419,9 +5421,9 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
 
     case '/boards/?/lists/?/cards/?/comments/?': // comment DELETE
         $qry_val_arr = array(
-            $r_resource_vars['comments']
+            ':id' => $r_resource_vars['comments']
         );
-        $revisions = executeQuery('SELECT comment, revisions FROM activities WHERE id =  $1 OR foreign_id = $1 ORDER BY id desc limit 1', $qry_val_arr);
+        $revisions = executeQuery('SELECT comment, revisions FROM activities WHERE id =  :id OR foreign_id = :id ORDER BY id desc limit 1', $qry_val_arr);
         $comment = '##USER_NAME## deleted comment in card ##CARD_LINK##';
         if (!empty($revisions['revisions'])) {
             $revision = unserialize($revisions['revisions']);
@@ -5473,7 +5475,7 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $conditions = array(
             $r_resource_vars['cards']
         );
-        $activity_count = executeQuery("SELECT COUNT(id) as total_count FROM activities WHERE type = 'add_comment' AND card_id = $1", $conditions);
+        $activity_count = executeQuery("SELECT COUNT(id) as total_count FROM activities WHERE type = 'add_comment' AND card_id = ?", $conditions);
         $activity_count = (!empty($activity_count)) ? $activity_count['total_count'] : 0;
         $qry_val_arr = array(
             $activity_count,
