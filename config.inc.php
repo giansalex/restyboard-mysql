@@ -51,7 +51,7 @@ define('CHAT_DB_NAME', 'ejabb');
 define('CHAT_DB_PORT', '5432');
 define('SECURITYSALT', 'e9a556134534545ab47c6c81c14f06c0b8sdfsdf');
 define('SITE_LICENSE_KEY', 'REPLACE YOUR LICENCE HERE');
-define('SITE_NAME', 'MYSTIE');
+
 define('LICENSE_HASH', '');
 if (!defined('STDIN') && !file_exists(APP_PATH . '/tmp/cache/site_url_for_shell.php') && !empty($_server_domain_url)) {
     $fh = fopen(APP_PATH . '/tmp/cache/site_url_for_shell.php', 'a');
