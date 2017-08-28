@@ -94,6 +94,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 3
             );
             $role_links = executeQuery('SELECT * FROM role_links_listing WHERE id = ?', $qry_val_arr);
+
             $response = array_merge($response, $role_links);
             $files = glob(APP_PATH . '/client/locales/*/translation.json', GLOB_BRACE);
             $lang_iso2_codes = array();
@@ -102,11 +103,12 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $folder_iso2_code = $folder[count($folder) - 2];
                 array_push($lang_iso2_codes, $folder_iso2_code);
             }
-            $qry_val_arr = array(
-                '{' . implode($lang_iso2_codes, ',') . '}'
-            );
-            $result = pg_query_params($db_lnk, 'SELECT name, iso2 FROM languages WHERE iso2 = ANY ( $1 ) ORDER BY name ASC', $qry_val_arr);
-            while ($row = pg_fetch_assoc($result)) {
+
+
+            $qry_val_arr = '\'' . implode($lang_iso2_codes, "','") . '\'';
+
+            $result = pdoQueryStm($db_lnk, 'SELECT name, iso2 FROM languages WHERE iso2 IN ( ' . $qry_val_arr.' ) ORDER BY name ASC');
+            while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
                 $languages[$row['iso2']] = $row['name'];
             }
             $response['languages'] = json_encode($languages);
@@ -213,10 +215,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $val_array = array(
             3
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT * FROM roles WHERE id != $1', $val_array);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT * FROM roles WHERE id != ?', $val_array);
         $roles = array();
         $i = 0;
-        while ($row = pg_fetch_assoc($s_result)) {
+        while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
             $roles[$i]['id'] = $row['id'];
             $roles[$i]['name'] = ucfirst($row['name']);
             $val_array = array(
@@ -227,10 +229,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $i++;
         }
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
                 $board_lists = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data['data'][] = $obj;
                 }
@@ -245,7 +247,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         } else {
             echo json_encode($response);
@@ -258,7 +260,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $conditions = array(
                 $_GET['token']
             );
-            pg_query_params($db_lnk, 'DELETE FROM oauth_access_tokens WHERE access_token= $1', $conditions);
+            pdoQueryStm($db_lnk, 'DELETE FROM oauth_access_tokens WHERE access_token= ?', $conditions);
         }
         $authUser = array();
         echo json_encode($response);
@@ -302,14 +304,14 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             if (!empty($logged_user_board_ids)) {
                 $board_ids = array_intersect($logged_user_board_ids, $board_ids);
             }
-            $org_users = pg_query_params($db_lnk, 'SELECT organization_id FROM organizations_users WHERE user_id = $1', $val_array);
+            $org_users = pdoQueryStm($db_lnk, 'SELECT organization_id FROM organizations_users WHERE user_id = ?', $val_array);
             $org_ids = array();
-            while ($row = pg_fetch_assoc($org_users)) {
+            while ($row = $org_users->fetch(PDO::FETCH_ASSOC)) {
                 $org_ids[] = $row['organization_id'];
             }
             if (!empty($r_resource_filters['type']) && $r_resource_filters['type'] == 'profile') {
                 $i = 1;
-                $str = 'user_id = $' . $i;
+                $str = 'user_id = ?';
                 array_push($pg_params, $r_resource_vars['users']);
                 $i++;
                 if (!empty($logged_user_board_ids)) {
@@ -326,28 +328,28 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 if (!empty($r_resource_filters['last_activity_id'])) {
                     $condition = ' AND al.id > ?';
                 }
-                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ((user_id = $1 AND board_id IN (SELECT id FROM boards WHERE organization_id = $2)) OR organization_id  = ANY ( $3 )) ' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
+                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ((user_id = ? AND board_id IN (SELECT id FROM boards WHERE organization_id = ?)) OR organization_id  = ANY ( ? )) ' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
                 $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ((user_id = ? AND board_id IN (SELECT id FROM boards WHERE organization_id = ?)) OR organization_id  = ANY ( ? )) ' . $condition;
                 array_push($pg_params, $r_resource_vars['users'], $r_resource_filters['organization_id'], '{' . $r_resource_filters['organization_id'] . '}');
             } else if (!empty($r_resource_filters['type']) && $r_resource_filters['type'] = 'all') {
                 if (!empty($r_resource_filters['last_activity_id'])) {
                     $condition = ' AND al.id > ?';
                 }
-                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE (board_id = ANY ( $1 ) OR organization_id  = ANY ( $2 ))' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
+                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE (board_id = ANY ( ? ) OR organization_id  = ANY ( ? ))' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
                 $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE (board_id = ANY ( ? ) OR organization_id  = ANY ( ? ))' . $condition;
                 array_push($pg_params, '{' . implode(',', $board_ids) . '}', '{' . implode(',', $org_ids) . '}');
             } else if (!empty($r_resource_filters['board_id']) && $r_resource_filters['board_id']) {
                 if (!empty($r_resource_filters['last_activity_id'])) {
                     $condition = ' AND al.id > ?';
                 }
-                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE user_id = $1 AND board_id = $2' . $condition . ' ORDER BY freshness_ts DESC, materialized_path ASC LIMIT ' . PAGING_COUNT . ') as d';
+                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE user_id = ? AND board_id = ?' . $condition . ' ORDER BY freshness_ts DESC, materialized_path ASC LIMIT ' . PAGING_COUNT . ') as d';
                 $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE user_id = ? AND board_id = ?' . $condition;
                 array_push($pg_params, $r_resource_vars['users'], $r_resource_filters['board_id']);
             } else {
                 if (!empty($r_resource_filters['last_activity_id'])) {
                     $condition = ' AND al.id > ?';
                 }
-                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ( board_id = ANY( $1 ) OR organization_id  = ANY ( $2 ) )' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
+                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM activities_listing al WHERE ( board_id = ANY( ? ) OR organization_id  = ANY ( ? ) )' . $condition . ' ORDER BY id DESC LIMIT ' . PAGING_COUNT . ') as d';
                 $c_sql = 'SELECT COUNT(*) FROM activities_listing al WHERE ( board_id = ANY( ? ) OR organization_id  = ANY ( ? ) )' . $condition;
                 array_push($pg_params, '{' . implode(',', $board_ids) . '}', '{' . implode(',', $org_ids) . '}');
             }
@@ -361,10 +363,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $_metadata = $paging_data['_metadata'];
         }
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
                 $board_lists = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     if (isset($obj['board_activities']) && !empty($obj['board_activities'])) {
                         $board_activities_count = count($obj['board_activities']);
@@ -404,7 +406,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
@@ -412,11 +414,11 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
     case '/users/search':
         if (!empty($r_resource_filters['organizations'])) {
             $sql = 'SELECT row_to_json(d) FROM (SELECT u.id, u.username, u.profile_picture_path,u.initials, u.full_name FROM users u LEFT JOIN organizations_users ou ON ou.user_id = u.id WHERE u.is_active = true AND u.is_email_confirmed = true AND ';
-            $sql.= '(ou.organization_id != $1 OR ou.user_id IS null) AND';
+            $sql.= '(ou.organization_id != ? OR ou.user_id IS null) AND';
             array_push($pg_params, $r_resource_filters['organizations']);
         } else if (!empty($r_resource_filters['board_id'])) {
             $sql = 'SELECT row_to_json(d) FROM (SELECT u.id, u.username, u.profile_picture_path,u.initials, u.full_name FROM users u JOIN boards_users bu ON bu.user_id = u.id WHERE u.is_active = true AND u.is_email_confirmed = true AND ';
-            $sql.= 'bu.board_id = $1 AND';
+            $sql.= 'bu.board_id = ? AND';
             array_push($pg_params, $r_resource_filters['board_id']);
         } else if (!empty($r_resource_filters['filter'])) {
             $sql = 'SELECT row_to_json(d) FROM (SELECT u.id, u.username, u.profile_picture_path,u.initials, u.full_name FROM users u WHERE ';
@@ -424,9 +426,9 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $sql = 'SELECT row_to_json(d) FROM (SELECT u.id, u.username, u.profile_picture_path,u.initials, u.full_name FROM users u WHERE  u.is_active = true AND u.is_email_confirmed = true AND ';
         }
         if (empty($pg_params)) {
-            $sql.= '(LOWER(u.username) LIKE LOWER($1) OR LOWER(u.email) LIKE LOWER($2))) as d ';
+            $sql.= '(LOWER(u.username) LIKE LOWER(?) OR LOWER(u.email) LIKE LOWER(?))) as d ';
         } else {
-            $sql.= '(LOWER(u.username) LIKE LOWER($2) OR LOWER(u.email) LIKE LOWER($3))) as d ';
+            $sql.= '(LOWER(u.username) LIKE LOWER(?) OR LOWER(u.email) LIKE LOWER(?))) as d ';
         }
         array_push($pg_params, '%' . $r_resource_filters['q'] . '%', '%' . $r_resource_filters['q'] . '%');
         if (empty($r_resource_filters['q'])) {
@@ -435,15 +437,15 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $pg_params = array();
         }
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data[] = $obj;
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         } else {
             echo json_encode($response);
@@ -451,18 +453,18 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         break;
 
     case '/users/?':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM users ul WHERE id = $1 ) as d ';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM users ul WHERE id = ? ) as d ';
         array_push($pg_params, $r_resource_vars['users']);
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data = $obj;
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
@@ -472,17 +474,17 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $val_array = array(
                 $authUser['id']
             );
-            $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_stars WHERE is_starred = true AND user_id = $1', $val_array);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM board_stars WHERE is_starred = true AND user_id = ?', $val_array);
             $response['starred_boards'] = array();
-            while ($row = pg_fetch_assoc($s_result)) {
+            while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                 $response['starred_boards'][] = $row['board_id'];
             }
             $val_array = array(
                 $authUser['id']
             );
-            $s_result = pg_query_params($db_lnk, 'SELECT o.id as organization_id, o.name as organization_name, bu.board_id FROM boards_users  bu LEFT JOIN boards b ON b.id = bu.board_id LEFT JOIN organizations o ON o.id = b.organization_id  WHERE bu.user_id = $1', $val_array);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT o.id as organization_id, o.name as organization_name, bu.board_id FROM boards_users  bu LEFT JOIN boards b ON b.id = bu.board_id LEFT JOIN organizations o ON o.id = b.organization_id  WHERE bu.user_id = ?', $val_array);
             $response['user_boards'] = array();
-            while ($row = pg_fetch_assoc($s_result)) {
+            while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                 $response['user_boards'][] = $row;
             }
             echo json_encode($response);
@@ -506,22 +508,22 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $str = '';
         $i = 1;
         if (!empty($logged_user_board_ids)) {
-            $str.= 'board_id = ANY ( $' . $i . ' ) AND';
+            $str.= 'board_id = ANY ( ? ) AND';
             $i++;
             array_push($pg_params, '{' . implode(',', $logged_user_board_ids) . '}');
         }
-        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM users_cards_listing ucl WHERE ' . $str . ' user_id = $' . $i . ' ORDER BY board_id ASC) as d';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM users_cards_listing ucl WHERE ' . $str . ' user_id = ? ORDER BY board_id ASC) as d';
         array_push($pg_params, $r_resource_vars['users']);
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data[] = $obj;
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2]. '\n';
             }
         }
         break;
@@ -533,14 +535,14 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $val_array = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_stars WHERE user_id = $1', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM board_stars WHERE user_id = ?', $val_array);
                 $response['starred_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['starred_boards'][] = $row['board_id'];
                 }
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = $1', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = ?', $val_array);
                 $response['user_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['user_boards'][] = $row['board_id'];
                 }
                 $board_ids = array_merge($response['starred_boards'], $response['user_boards']);
@@ -549,7 +551,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                     $board_ids = array_unique($board_ids);
                     $ids = '{' . implode($board_ids, ',') . '}';
                 }
-                $sql.= 'WHERE ul.id =ANY($1)';
+                $sql.= 'WHERE ul.id =ANY(?)';
                 array_push($pg_params, $ids);
             }
             $sql.= ' ORDER BY name ASC) as d';
@@ -562,14 +564,14 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $val_array = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_subscribers WHERE user_id = $1', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM board_subscribers WHERE user_id = ?', $val_array);
                 $response['starred_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['starred_boards'][] = $row['board_id'];
                 }
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = $1', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = ?', $val_array);
                 $response['user_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['user_boards'][] = $row['board_id'];
                 }
                 $board_ids = array_merge($response['starred_boards'], $response['user_boards']);
@@ -578,7 +580,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                     $board_ids = array_unique($board_ids);
                     $ids = '{' . implode($board_ids, ',') . '}';
                 }
-                $sql.= 'WHERE ul.id = ANY ($1)';
+                $sql.= 'WHERE ul.id = ANY (?)';
                 array_push($pg_params, $ids);
             }
             $sql.= ' ORDER BY name ASC ) as d';
@@ -593,10 +595,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $_metadata = $paging_data['_metadata'];
         }
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
                 $board_lists = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $obj = getActivitiesObj($obj);
                     if (!empty($_metadata)) {
@@ -610,7 +612,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
@@ -623,14 +625,14 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $val_array = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_stars WHERE user_id = ?', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM board_stars WHERE user_id = ?', $val_array);
                 $response['starred_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['starred_boards'][] = $row['board_id'];
                 }
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = ?', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = ?', $val_array);
                 $response['user_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row =$s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['user_boards'][] = $row['board_id'];
                 }
                 $board_ids = array_merge($response['starred_boards'], $response['user_boards']);
@@ -639,7 +641,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                     $board_ids = array_unique($board_ids);
                     $ids = '{' . implode($board_ids, ',') . '}';
                 }
-                $sql.= 'WHERE ul.id =ANY($1)';
+                $sql.= 'WHERE ul.id =ANY(?)';
                 array_push($pg_params, $ids);
             }
             $sql.= ' ORDER BY name ASC) as d ';
@@ -684,14 +686,14 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $val_array = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM board_subscribers WHERE user_id = $1', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM board_subscribers WHERE user_id = ?', $val_array);
                 $response['starred_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['starred_boards'][] = $row['board_id'];
                 }
-                $s_result = pg_query_params($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = $1', $val_array);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT board_id FROM boards_users WHERE user_id = ?', $val_array);
                 $response['user_boards'] = array();
-                while ($row = pg_fetch_assoc($s_result)) {
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $response['user_boards'][] = $row['board_id'];
                 }
                 $board_ids = array_merge($response['starred_boards'], $response['user_boards']);
@@ -700,7 +702,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                     $board_ids = array_unique($board_ids);
                     $ids = '{' . implode($board_ids, ',') . '}';
                 }
-                $sql.= 'WHERE ul.id = ANY ($1)';
+                $sql.= 'WHERE ul.id = ANY (?)';
                 array_push($pg_params, $ids);
             }
             $sql.= ' ORDER BY name ASC) as d ';
@@ -737,9 +739,9 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         );
         $organization_count = executeQuery('SELECT count(*) FROM boards WHERE board_visibility = ?', $val_array);
         $filter_count['organization'] = $organization_count['count'];
-        $board_user_roles_result = pg_query_params($db_lnk, 'SELECT id, name FROM board_user_roles', array());
+        $board_user_roles_result = pdoQueryStm($db_lnk, 'SELECT id, name FROM board_user_roles', array());
         $board_user_roles = array();
-        while ($board_user = pg_fetch_assoc($board_user_roles_result)) {
+        while ($board_user = $board_user_roles_result->fetch(PDO::FETCH_ASSOC)) {
             $board_user_roles[] = $board_user;
         }
         if (!empty($c_sql)) {
@@ -747,10 +749,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $_metadata = $paging_data['_metadata'];
         }
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
                 $board_lists = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     if ((!empty($r_resource_filters['type']) && $r_resource_filters['type'] == 'simple')) {
                         if (!empty($obj['lists'])) {
@@ -802,7 +804,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                     echo json_encode($data);
                 }
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         } else {
             if (is_plugin_enabled('r_chart')) {
@@ -844,16 +846,16 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $response = array();
         $sql = false;
         $s_sql = 'SELECT id, name, parent_id FROM setting_categories WHERE parent_id IS null ORDER BY "order" ASC';
-        $s_result = pg_query_params($db_lnk, $s_sql, array());
-        while ($row = pg_fetch_assoc($s_result)) {
+        $s_result = pdoQueryStm($db_lnk, $s_sql, array());
+        while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
             if ($row['id'] == $r_resource_vars['settings'] || $row['parent_id'] == $r_resource_vars['settings']) {
-                $s_sql = 'SELECT s.*, sc.name as category_name FROM settings s LEFT JOIN setting_categories sc ON sc.id = s.setting_category_id  WHERE  setting_category_id = $1 OR setting_category_parent_id = $2 ORDER BY "order" ASC';
+                $s_sql = 'SELECT s.*, sc.name as category_name FROM settings s LEFT JOIN setting_categories sc ON sc.id = s.setting_category_id  WHERE  setting_category_id = ? OR setting_category_parent_id = ? ORDER BY "order" ASC';
                 $s_val = array(
                     $row['id'],
                     $row['id']
                 );
-                $ss_result = pg_query_params($db_lnk, $s_sql, $s_val);
-                while ($srow = pg_fetch_assoc($ss_result)) {
+                $ss_result = pdoQueryStm($db_lnk, $s_sql, $s_val);
+                while ($srow = $ss_result->fetch(PDO::FETCH_ASSOC)) {
                     $row['settings'][] = $srow;
                 }
             }
@@ -866,15 +868,15 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $response = array();
         $sql = false;
         $s_sql = 'SELECT id, display_name FROM email_templates ORDER BY id ASC';
-        $s_result = pg_query_params($db_lnk, $s_sql, array());
-        while ($row = pg_fetch_assoc($s_result)) {
+        $s_result = pdoQueryStm($db_lnk, $s_sql, array());
+        while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
             if ($row['id'] == $r_resource_vars['email_templates']) {
-                $s_sql = 'SELECT from_email, reply_to_email, name, description, subject, email_text_content, email_variables, display_name FROM email_templates WHERE  id = $1';
+                $s_sql = 'SELECT from_email, reply_to_email, name, description, subject, email_text_content, email_variables, display_name FROM email_templates WHERE  id = ?';
                 $s_val = array(
                     $row['id']
                 );
-                $ss_result = pg_query_params($db_lnk, $s_sql, $s_val);
-                while ($srow = pg_fetch_assoc($ss_result)) {
+                $ss_result = pdoQueryStm($db_lnk, $s_sql, $s_val);
+                while ($srow = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     $row['template'] = $srow;
                 }
             }
@@ -900,34 +902,34 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             $check_visibility = executeQuery($s_sql, $arr);
             if (!empty($check_visibility)) {
-                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM boards_listing ul WHERE id = $1 ORDER BY id DESC) as d';
+                $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM boards_listing ul WHERE id = ? ORDER BY id DESC) as d';
                 array_push($pg_params, $r_resource_vars['boards']);
                 if (!empty($sql)) {
-                    if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+                    if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                         $data = array();
-                        while ($row = pg_fetch_row($result)) {
+                        while ($row = $result->fetch(PDO::FETCH_NUM)) {
                             $obj = json_decode($row[0], true);
                             global $_server_domain_url;
                             $md5_hash = md5(SECURITYSALT . $r_resource_vars['boards']);
                             $obj['google_syn_url'] = $_server_domain_url . '/ical/' . $r_resource_vars['boards'] . '/' . $md5_hash . '.ics';
                             $acl_links_sql = 'SELECT row_to_json(d) FROM (SELECT * FROM acl_board_links_listing) as d';
-                            $acl_links_result = pg_query_params($db_lnk, $acl_links_sql, array());
+                            $acl_links_result = pdoQueryStm($db_lnk, $acl_links_sql, array());
                             $obj['acl_links'] = array();
-                            while ($row = pg_fetch_assoc($acl_links_result)) {
+                            while ($row = $acl_links_result->fetch(PDO::FETCH_ASSOC)) {
                                 $obj['acl_links'][] = json_decode($row['row_to_json'], true);
                             }
                             $board_user_roles_sql = 'SELECT row_to_json(d) FROM (SELECT * FROM board_user_roles) as d';
-                            $board_user_roles_result = pg_query_params($db_lnk, $board_user_roles_sql, array());
+                            $board_user_roles_result = pdoQueryStm($db_lnk, $board_user_roles_sql, array());
                             $obj['board_user_roles'] = array();
-                            while ($row = pg_fetch_assoc($board_user_roles_result)) {
+                            while ($row = $board_user_roles_result->fetch(PDO::FETCH_ASSOC)) {
                                 $obj['board_user_roles'][] = json_decode($row['row_to_json'], true);
                             }
                             $data = $obj;
                         }
                         echo json_encode($data);
-                        pg_free_result($result);
+
                     } else {
-                        $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                        $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
                     }
                 }
             } else {
@@ -948,30 +950,30 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $organization_ids = array();
             $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM organizations';
             if (!empty($authUser) && $authUser['role_id'] != 1) {
-                $s_sql = 'SELECT b.organization_id FROM boards_users AS bu LEFT JOIN boards AS b ON b.id = bu.board_id WHERE bu.user_id = $1';
+                $s_sql = 'SELECT b.organization_id FROM boards_users AS bu LEFT JOIN boards AS b ON b.id = bu.board_id WHERE bu.user_id = ?';
                 $conditions = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, $s_sql, $conditions);
-                while ($row = pg_fetch_assoc($s_result)) {
+                $s_result = pdoQueryStm($db_lnk, $s_sql, $conditions);
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     if ($row['organization_id'] != 0) {
                         array_push($organization_ids, $row['organization_id']);
                     }
                 }
-                $s_sql = 'SELECT id FROM organizations WHERE user_id = $1';
+                $s_sql = 'SELECT id FROM organizations WHERE user_id = ?';
                 $conditions = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, $s_sql, $conditions);
-                while ($row = pg_fetch_assoc($s_result)) {
+                $s_result = pdoQueryStm($db_lnk, $s_sql, $conditions);
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     array_push($organization_ids, $row['id']);
                 }
-                $s_sql = 'SELECT organization_id FROM organizations_users WHERE user_id = $1';
+                $s_sql = 'SELECT organization_id FROM organizations_users WHERE user_id = ?';
                 $conditions = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, $s_sql, $conditions);
-                while ($row = pg_fetch_assoc($s_result)) {
+                $s_result = pdoQueryStm($db_lnk, $s_sql, $conditions);
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     array_push($organization_ids, $row['organization_id']);
                 }
                 if (!empty($organization_ids)) {
@@ -982,45 +984,45 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             $sql.= ' ORDER BY id ASC) as d ';
             if (!empty($sql)) {
-                if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+                if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                     $data = array();
-                    while ($row = pg_fetch_row($result)) {
+                    while ($row = $result->fetch(PDO::FETCH_NUM)) {
                         $obj = json_decode($row[0], true);
                         $data[] = $obj;
                     }
                     echo json_encode($data);
                 } else {
-                    $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                    $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
                 }
             }
         } else {
             $organization_ids = array();
             $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM organizations_listing';
             if (!empty($authUser) && $authUser['role_id'] != 1) {
-                $s_sql = 'SELECT b.organization_id FROM boards_users AS bu LEFT JOIN boards AS b ON b.id = bu.board_id WHERE bu.user_id = $1';
+                $s_sql = 'SELECT b.organization_id FROM boards_users AS bu LEFT JOIN boards AS b ON b.id = bu.board_id WHERE bu.user_id = ?';
                 $conditions = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, $s_sql, $conditions);
-                while ($row = pg_fetch_assoc($s_result)) {
+                $s_result = pdoQueryStm($db_lnk, $s_sql, $conditions);
+                while ($row = $s_result->fetch(PDO::FETCH_ASSOC)) {
                     if ($row['organization_id'] != 0) {
                         array_push($organization_ids, $row['organization_id']);
                     }
                 }
-                $s_sql = 'SELECT id FROM organizations WHERE user_id = $1';
+                $s_sql = 'SELECT id FROM organizations WHERE user_id = ?';
                 $conditions = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, $s_sql, $conditions);
-                while ($row = pg_fetch_assoc($s_result)) {
+                $s_result = pdoQueryStm($db_lnk, $s_sql, $conditions);
+                while ($row =  $s_result->fetch(PDO::FETCH_ASSOC)) {
                     array_push($organization_ids, $row['id']);
                 }
-                $s_sql = 'SELECT organization_id FROM organizations_users WHERE user_id = $1';
+                $s_sql = 'SELECT organization_id FROM organizations_users WHERE user_id = ?';
                 $conditions = array(
                     $authUser['id']
                 );
-                $s_result = pg_query_params($db_lnk, $s_sql, $conditions);
-                while ($row = pg_fetch_assoc($s_result)) {
+                $s_result = pdoQueryStm($db_lnk, $s_sql, $conditions);
+                while ($row =  $s_result->fetch(PDO::FETCH_ASSOC)) {
                     array_push($organization_ids, $row['organization_id']);
                 }
                 if (!empty($organization_ids)) {
@@ -1031,27 +1033,27 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             $sql.= ' ORDER BY id ASC) as d ';
             if (!empty($sql)) {
-                if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+                if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                     $data = array();
-                    while ($row = pg_fetch_row($result)) {
+                    while ($row =  $result->fetch(PDO::FETCH_NUM)) {
                         $obj = json_decode($row[0], true);
                         $acl_links_sql = 'SELECT row_to_json(d) FROM (SELECT * FROM acl_organization_links_listing) as d';
-                        $acl_links_result = pg_query_params($db_lnk, $acl_links_sql, array());
+                        $acl_links_result = pdoQueryStm($db_lnk, $acl_links_sql, array());
                         $obj['acl_links'] = array();
-                        while ($row = pg_fetch_assoc($acl_links_result)) {
+                        while ($row = $acl_links_result->fetch(PDO::FETCH_ASSOC)) {
                             $obj['acl_links'][] = json_decode($row['row_to_json'], true);
                         }
                         $organization_user_roles_sql = 'SELECT row_to_json(d) FROM (SELECT * FROM organization_user_roles) as d';
-                        $organization_user_roles_result = pg_query_params($db_lnk, $organization_user_roles_sql, array());
+                        $organization_user_roles_result = pdoQueryStm($db_lnk, $organization_user_roles_sql, array());
                         $obj['organization_user_roles'] = array();
-                        while ($row = pg_fetch_assoc($organization_user_roles_result)) {
+                        while ($row = $organization_user_roles_result->fetch(PDO::FETCH_ASSOC)) {
                             $obj['organization_user_roles'][] = json_decode($row['row_to_json'], true);
                         }
                         $data[] = $obj;
                     }
                     echo json_encode($data);
                 } else {
-                    $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                    $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
                 }
             }
         }
@@ -1069,30 +1071,30 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         }
         $check_visibility = executeQuery($s_sql, $arr);
         if (!empty($check_visibility)) {
-            $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM organizations_listing ul WHERE id = $1 ORDER BY id DESC ) as d';
+            $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM organizations_listing ul WHERE id = ? ORDER BY id DESC ) as d';
             array_push($pg_params, $r_resource_vars['organizations']);
             if (!empty($sql)) {
-                if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+                if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                     $data = array();
-                    while ($row = pg_fetch_row($result)) {
+                    while ($row = $result->fetch(PDO::FETCH_NUM)) {
                         $obj = json_decode($row[0], true);
                         $data = $obj;
                     }
                     $acl_organization_links_sql = 'SELECT row_to_json(d) FROM (SELECT * FROM acl_organization_links_listing) as d';
-                    $acl_organization_links_result = pg_query_params($db_lnk, $acl_organization_links_sql, array());
+                    $acl_organization_links_result = pdoQueryStm($db_lnk, $acl_organization_links_sql, array());
                     $data['acl_links'] = array();
-                    while ($row = pg_fetch_assoc($acl_organization_links_result)) {
+                    while ($row = $acl_organization_links_result->fetch(PDO::FETCH_ASSOC)) {
                         $data['acl_links'][] = json_decode($row['row_to_json'], true);
                     }
                     $organization_user_roles_sql = 'SELECT id, name, description FROM organization_user_roles ORDER BY id ASC';
-                    $organization_user_roles_result = pg_query_params($db_lnk, $organization_user_roles_sql, array());
+                    $organization_user_roles_result = pdoQueryStm($db_lnk, $organization_user_roles_sql, array());
                     $data['organization_user_roles'] = array();
-                    while ($row = pg_fetch_assoc($organization_user_roles_result)) {
+                    while ($row = $organization_user_roles_result->fetch(PDO::FETCH_ASSOC)) {
                         $data['organization_user_roles'][] = $row;
                     }
                     echo json_encode($data);
                 } else {
-                    $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                    $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
                 }
             }
         } else {
@@ -1154,10 +1156,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $_metadata = $paging_data['_metadata'];
             }
             if (!empty($sql)) {
-                if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+                if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                     $data = array();
                     $board_lists = array();
-                    while ($row = pg_fetch_row($result)) {
+                    while ($row = $result->fetch(PDO::FETCH_NUM)) {
                         $obj = json_decode($row[0], true);
                         if (isset($obj['board_activities']) && !empty($obj['board_activities'])) {
                             $board_activities_count = count($obj['board_activities']);
@@ -1197,88 +1199,88 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                     }
                     echo json_encode($data);
                 } else {
-                    $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                    $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
                 }
             }
         }
         break;
 
     case '/boards/?/boards_stars':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM board_stars bs WHERE board_id = $1';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM board_stars bs WHERE board_id = ?';
         array_push($pg_params, $r_resource_vars['boards']);
         if (!empty($authUser) && $authUser['role_id'] != 1) {
-            $sql.= ' and user_id = $2';
+            $sql.= ' and user_id = ?';
             array_push($pg_params, $authUser['id']);
         }
         $sql.= ' ORDER BY id DESC) as d ';
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data = $obj;
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
 
     case '/boards/?/board_subscribers':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM board_subscribers ul WHERE board_id = $1';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM board_subscribers ul WHERE board_id = ?';
         array_push($pg_params, $r_resource_vars['boards']);
         if (!empty($authUser) && $authUser['role_id'] != 1) {
-            $sql.= ' and user_id = $2';
+            $sql.= ' and user_id = ?';
             array_push($pg_params, $authUser['id']);
         }
         $sql.= ' ORDER BY id DESC) as d ';
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data[] = $obj;
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
     case '/boards/search':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT id, name, background_color FROM boards ul WHERE name ILIKE $1 ORDER BY id DESC) as d';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT id, name, background_color FROM boards ul WHERE name ILIKE ? ORDER BY id DESC) as d';
         array_push($pg_params, '%' . $r_resource_filters['q'] . '%');
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data = $obj;
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
     case '/boards/?/lists/?/cards/?':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM cards_listing cll WHERE id = $1) as d ';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM cards_listing cll WHERE id = ?) as d ';
         array_push($pg_params, $r_resource_vars['cards']);
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data = $obj;
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
     case '/boards/?/lists':
         $fields = !empty($r_resource_filters['fields']) ? $r_resource_filters['fields'] : '*';
         $_metadata = array();
-        $sql = 'SELECT row_to_json(d) FROM (SELECT ' . $fields . ' FROM lists_listing cll WHERE board_id = $1) as d';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT ' . $fields . ' FROM lists_listing cll WHERE board_id = ?) as d';
         array_push($pg_params, $r_resource_vars['boards']);
         if (empty($r_resource_filters['from']) || (!empty($r_resource_filters['from']) && $r_resource_filters['from'] != 'app')) {
             $c_sql = 'SELECT COUNT(*) FROM lists_listing cll';
@@ -1288,10 +1290,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 $_metadata = $paging_data['_metadata'];
             }
         }
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
             $board_lists = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $obj = getActivitiesObj($obj);
                 if (!empty($_metadata)) {
@@ -1305,14 +1307,14 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
     case '/boards/?/lists/?/cards':
         $_metadata = array();
         $fields = !empty($r_resource_filters['fields']) ? $r_resource_filters['fields'] : '*';
-        $sql = 'SELECT row_to_json(d) FROM (SELECT ' . $fields . ' FROM cards_listing cll WHERE board_id = $1 AND list_id = $2) as d ';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT ' . $fields . ' FROM cards_listing cll WHERE board_id = ? AND list_id = ?) as d ';
         if (empty($r_resource_filters['from']) || (!empty($r_resource_filters['from']) && $r_resource_filters['from'] != 'app')) {
             $c_sql = 'SELECT COUNT(*) FROM cards_listing cll';
             if (!empty($c_sql)) {
@@ -1323,10 +1325,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         }
         array_push($pg_params, $r_resource_vars['boards']);
         array_push($pg_params, $r_resource_vars['lists']);
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
             $board_lists = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 if (!empty($_metadata)) {
                     $data['data'][] = $obj;
@@ -1339,7 +1341,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
@@ -1371,10 +1373,10 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $_metadata = $paging_data['_metadata'];
         }
         if (!empty($sql)) {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
                 $board_lists = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     if (!empty($obj['revisions']) && trim($obj['revisions']) != '') {
                         $revisions = unserialize($obj['revisions']);
@@ -1412,38 +1414,38 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
 
     case '/boards/?/lists/?/cards/?/checklists':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM checklist_add_listing al WHERE board_id = $1) as d ';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM checklist_add_listing al WHERE board_id = ?) as d ';
         array_push($pg_params, $r_resource_vars['boards']);
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data[] = $obj;
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
     case '/boards/?/visibility':
-        $sql = 'SELECT row_to_json(d) FROM (SELECT board_visibility FROM boards bl WHERE bl.id = $1) as d ';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT board_visibility FROM boards bl WHERE bl.id = ?) as d ';
         array_push($pg_params, $r_resource_vars['boards']);
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data = $obj;
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
@@ -1462,7 +1464,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
 
     case '/boards/?/lists/?/cards/?/search':
         $sql = 'SELECT row_to_json(d) FROM (SELECT bul.id, bul.user_id, bul.username, bul.profile_picture_path, bul.full_name, bul.initials  FROM boards_users_listing bul WHERE';
-        $sql.= '(bul.username LIKE $1 OR bul.email LIKE $2) AND bul.board_id = $3) as d ';
+        $sql.= '(bul.username LIKE ? OR bul.email LIKE ?) AND bul.board_id = ?) as d ';
         array_push($pg_params, '%' . $r_resource_filters['q'] . '%', '%' . $r_resource_filters['q'] . '%', $r_resource_vars['boards']);
         if (empty($r_resource_filters['q'])) {
             $sql = false;
@@ -1470,22 +1472,22 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $pg_params = array();
             echo json_encode($response);
         } else {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data[] = $obj;
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
 
     case '/boards/?/cards/search':
         $user_id = (!empty($authUser['id'])) ? $authUser['id'] : 0;
-        $sql = 'SELECT row_to_json(d) FROM (SELECT DISTINCT c.id, c.name, bu.board_id FROM boards_users bu join cards c on c.board_id = bu.board_id WHERE bu.board_id IN (SELECT board_id FROM boards_users WHERE user_id = $1) AND c.name  LIKE $2 ORDER BY id ASC) as d';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT DISTINCT c.id, c.name, bu.board_id FROM boards_users bu join cards c on c.board_id = bu.board_id WHERE bu.board_id IN (SELECT board_id FROM boards_users WHERE user_id = ?) AND c.name  LIKE ? ORDER BY id ASC) as d';
         array_push($pg_params, $user_id, '%' . $r_resource_filters['q'] . '%');
         if (empty($r_resource_filters['q'])) {
             $sql = false;
@@ -1493,15 +1495,15 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $pg_params = array();
             echo json_encode($response);
         } else {
-            if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+            if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
                 $data = array();
-                while ($row = pg_fetch_row($result)) {
+                while ($row = $result->fetch(PDO::FETCH_NUM)) {
                     $obj = json_decode($row[0], true);
                     $data[] = $obj;
                 }
                 echo json_encode($data);
             } else {
-                $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+                $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
             }
         }
         break;
@@ -1509,47 +1511,47 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
     case '/acl_links':
         $sql = false;
         $acl_links_sql = 'SELECT row_to_json(d) FROM (SELECT acl_links.id,  acl_links.name, acl_links.group_id, ( SELECT array_to_json(array_agg(row_to_json(alr.*))) AS array_to_json FROM ( SELECT acl_links_roles.role_id FROM acl_links_roles acl_links_roles WHERE acl_links_roles.acl_link_id = acl_links.id ORDER BY acl_links_roles.role_id) alr) AS acl_links_roles, acl_links.is_guest_action, acl_links.is_user_action, acl_links.is_admin_action, acl_links.is_hide FROM acl_links acl_links ORDER BY group_id ASC, id ASC) as d';
-        $acl_links_result = pg_query_params($db_lnk, $acl_links_sql, array());
+        $acl_links_result = pdoQueryStm($db_lnk, $acl_links_sql, array());
         $response['acl_links'] = array();
-        while ($row = pg_fetch_assoc($acl_links_result)) {
+        while ($row = $acl_links_result->fetch(PDO::FETCH_ASSOC)) {
             $response['acl_links'][] = json_decode($row['row_to_json'], true);
         }
         $roles_sql = 'SELECT id, name FROM roles ORDER BY id ASC';
-        $roles_result = pg_query_params($db_lnk, $roles_sql, array());
+        $roles_result = pdoQueryStm($db_lnk, $roles_sql, array());
         $response['roles'] = array();
-        while ($row = pg_fetch_assoc($roles_result)) {
+        while ($row =$roles_result->fetch(PDO::FETCH_ASSOC)) {
             $response['roles'][] = $row;
         }
         $acl_board_links_sql = 'SELECT row_to_json(d) FROM (SELECT acl_board_links.id,  acl_board_links.name, acl_board_links.group_id, ( SELECT array_to_json(array_agg(row_to_json(alr.*))) AS array_to_json FROM ( SELECT acl_board_links_boards_user_roles.board_user_role_id FROM acl_board_links_boards_user_roles acl_board_links_boards_user_roles WHERE acl_board_links_boards_user_roles.acl_board_link_id = acl_board_links.id ORDER BY acl_board_links_boards_user_roles.board_user_role_id) alr) AS acl_board_links_boards_user_roles, acl_board_links.is_hide FROM acl_board_links acl_board_links ORDER BY group_id ASC, id ASC) as d';
-        $acl_board_links_result = pg_query_params($db_lnk, $acl_board_links_sql, array());
+        $acl_board_links_result = pdoQueryStm($db_lnk, $acl_board_links_sql, array());
         $response['acl_board_links'] = array();
-        while ($row = pg_fetch_assoc($acl_board_links_result)) {
+        while ($row = $acl_board_links_result->fetch(PDO::FETCH_ASSOC)) {
             $response['acl_board_links'][] = json_decode($row['row_to_json'], true);
         }
         $board_user_roles_sql = 'SELECT id, name, description FROM board_user_roles ORDER BY id ASC';
-        $board_user_roles_result = pg_query_params($db_lnk, $board_user_roles_sql, array());
+        $board_user_roles_result = pdoQueryStm($db_lnk, $board_user_roles_sql, array());
         $response['board_user_roles'] = array();
-        while ($row = pg_fetch_assoc($board_user_roles_result)) {
+        while ($row =$board_user_roles_result->fetch(PDO::FETCH_ASSOC)) {
             $response['board_user_roles'][] = $row;
         }
         $acl_organization_links_sql = 'SELECT row_to_json(d) FROM (SELECT acl_organization_links.id,  acl_organization_links.name, acl_organization_links.group_id, ( SELECT array_to_json(array_agg(row_to_json(alr.*))) AS array_to_json FROM ( SELECT acl_organization_links_organizations_user_roles.organization_user_role_id FROM acl_organization_links_organizations_user_roles acl_organization_links_organizations_user_roles WHERE acl_organization_links_organizations_user_roles.acl_organization_link_id = acl_organization_links.id ORDER BY acl_organization_links_organizations_user_roles.organization_user_role_id) alr) AS acl_organization_links_organizations_user_roles FROM acl_organization_links acl_organization_links ORDER BY group_id ASC, id ASC) as d';
-        $acl_organization_links_result = pg_query_params($db_lnk, $acl_organization_links_sql, array());
+        $acl_organization_links_result = pdoQueryStm($db_lnk, $acl_organization_links_sql, array());
         $response['acl_organization_links'] = array();
-        while ($row = pg_fetch_assoc($acl_organization_links_result)) {
+        while ($row =$acl_organization_links_result->fetch(PDO::FETCH_ASSOC)) {
             $response['acl_organization_links'][] = json_decode($row['row_to_json'], true);
         }
         $organization_user_roles_sql = 'SELECT id, name, description FROM organization_user_roles ORDER BY id ASC';
-        $organization_user_roles_result = pg_query_params($db_lnk, $organization_user_roles_sql, array());
+        $organization_user_roles_result = pdoQueryStm($db_lnk, $organization_user_roles_sql, array());
         $response['organization_user_roles'] = array();
-        while ($row = pg_fetch_assoc($organization_user_roles_result)) {
+        while ($row = $organization_user_roles_result->fetch(PDO::FETCH_ASSOC)) {
             $response['organization_user_roles'][] = $row;
         }
         echo json_encode($response);
         break;
 
     case '/settings':
-        $s_sql = pg_query_params($db_lnk, 'SELECT name, value FROM settings WHERE name = \'SITE_NAME\' OR name = \'SITE_TIMEZONE\' OR name = \'DROPBOX_APPKEY\' OR name = \'LABEL_ICON\' OR name = \'FLICKR_API_KEY\'  OR name = \'DEFAULT_LANGUAGE\' OR name = \'IMAP_EMAIL\' OR name = \'PAGING_COUNT\' OR name = \'DEFAULT_CARD_VIEW\'', array());
-        while ($row = pg_fetch_assoc($s_sql)) {
+        $s_sql = pdoQueryStm($db_lnk, 'SELECT name, value FROM settings WHERE name = \'SITE_NAME\' OR name = \'SITE_TIMEZONE\' OR name = \'DROPBOX_APPKEY\' OR name = \'LABEL_ICON\' OR name = \'FLICKR_API_KEY\'  OR name = \'DEFAULT_LANGUAGE\' OR name = \'IMAP_EMAIL\' OR name = \'PAGING_COUNT\' OR name = \'DEFAULT_CARD_VIEW\'', array());
+        while ($row =$s_sql->fetch(PDO::FETCH_ASSOC)) {
             $response[$row['name']] = $row['value'];
         }
         $files = glob(APP_PATH . '/client/apps/*/app.json', GLOB_BRACE);
@@ -1627,29 +1629,29 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $response['oauth_clients'] = array();
         $condition = '';
         if (!empty($_GET['id'])) {
-            $condition = 'WHERE id = $1';
+            $condition = 'WHERE id = ?';
             $condition_param = $_GET['id'];
         }
         if (!empty($condition_param)) {
             array_push($pg_params, $condition_param);
         }
         $sql = 'SELECT row_to_json(d) FROM (SELECT * FROM oauth_clients c ' . $condition . ') as d ';
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data[] = $obj;
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
     case '/oauth/applications':
         $response['applications'] = array();
         $_metadata = array();
-        $sql = 'SELECT row_to_json(d) FROM (SELECT DISTINCT ON (ort.client_id) ort.client_id, oc.client_name FROM oauth_refresh_tokens ort LEFT JOIN oauth_clients oc ON ort.client_id = oc.client_id WHERE ort.user_id = $1 AND ort.client_id != $2) as d ';
+        $sql = 'SELECT row_to_json(d) FROM (SELECT DISTINCT ON (ort.client_id) ort.client_id, oc.client_name FROM oauth_refresh_tokens ort LEFT JOIN oauth_clients oc ON ort.client_id = oc.client_id WHERE ort.user_id = ? AND ort.client_id != ?) as d ';
         array_push($pg_params, $authUser['username'], '7742632501382313');
         $c_sql = 'SELECT COUNT(*) FROM (SELECT DISTINCT ON (ort.client_id) ort.client_id, oc.client_name FROM oauth_refresh_tokens ort LEFT JOIN oauth_clients oc ON ort.client_id = oc.client_id WHERE ort.user_id = ? AND ort.client_id != ?) As oc';
         if (!empty($c_sql)) {
@@ -1657,9 +1659,9 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $sql.= $paging_data['sql'];
             $_metadata = $paging_data['_metadata'];
         }
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row =$result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data[] = $obj;
             }
@@ -1668,7 +1670,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
@@ -1681,9 +1683,9 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $sql.= $paging_data['sql'];
             $_metadata = $paging_data['_metadata'];
         }
-        if ($result = pg_query_params($db_lnk, $sql, $pg_params)) {
+        if ($result = pdoQueryStm($db_lnk, $sql, $pg_params)) {
             $data = array();
-            while ($row = pg_fetch_row($result)) {
+            while ($row = $result->fetch(PDO::FETCH_NUM)) {
                 $obj = json_decode($row[0], true);
                 $data[] = $obj;
             }
@@ -1692,7 +1694,7 @@ function r_get($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             }
             echo json_encode($data);
         } else {
-            $r_debug.= __LINE__ . ': ' . pg_last_error($db_lnk) . '\n';
+            $r_debug.= __LINE__ . ': ' . $db_lnk->errorInfo()[2] . '\n';
         }
         break;
 
@@ -1793,7 +1795,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     0,
                     $user_id['user_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE users SET is_active = $1 WHERE id = $2', $data);
+                pdoQueryStm($db_lnk, 'UPDATE users SET is_active = ? WHERE id = ?', $data);
             }
             $response = array(
                 'success' => 'Checked users are blocked successfully.'
@@ -1804,7 +1806,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     1,
                     $user_id['user_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE users SET is_active = $1 WHERE id = $2', $data);
+                pdoQueryStm($db_lnk, 'UPDATE users SET is_active = ? WHERE id = ?', $data);
             }
             $response = array(
                 'success' => 'Checked users are unblocked successfully.'
@@ -1814,7 +1816,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $conditions = array(
                     $user_id['user_id']
                 );
-                $users = pg_query_params($db_lnk, 'DELETE FROM users WHERE id= $1 RETURNING username', $conditions);
+                $users = pdoQueryStm($db_lnk, 'DELETE FROM users WHERE id= ?', $conditions);
+                //TODO: Require return username in $users['username']
                 if (is_plugin_enabled('r_chat') && $jabberHost) {
                     xmppDeleteUser($users);
                 }
@@ -1828,7 +1831,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     1,
                     $user_id['user_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE users SET is_email_confirmed = $1 WHERE id = $2', $data);
+                pdoQueryStm($db_lnk, 'UPDATE users SET is_email_confirmed = ? WHERE id = ?', $data);
             }
             $response = array(
                 'success' => 'Checked user emails are confirmed successfully.'
@@ -1849,7 +1852,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     1,
                     $board_id['board_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE boards SET is_closed = $1 WHERE id = $2', $data);
+                pdoQueryStm($db_lnk, 'UPDATE boards SET is_closed = ? WHERE id = ?', $data);
             }
             $response = array(
                 'success' => 'Checked boards are closed successfully.'
@@ -1860,7 +1863,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     0,
                     $board_id['board_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE boards SET is_closed = $1 WHERE id = $2', $data);
+                pdoQueryStm($db_lnk, 'UPDATE boards SET is_closed = ? WHERE id = ?', $data);
             }
             $response = array(
                 'success' => 'Checked boards are reopened successfully.'
@@ -1873,7 +1876,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $conditions = array(
                     $board_id['board_id']
                 );
-                $boards = pg_query_params($db_lnk, 'DELETE FROM boards WHERE id= $1', $conditions);
+                $boards = pdoQueryStm($db_lnk, 'DELETE FROM boards WHERE id= ?', $conditions);
                 if (is_plugin_enabled('r_chat') && $jabberHost && $boards) {
                     xmppDestroyRoom($boards, $xmpp);
                 }
@@ -1896,7 +1899,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 getCryptHash($password) ,
                 $user['id']
             );
-            pg_query_params($db_lnk, 'UPDATE users SET password = ? WHERE id = ?', $val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE users SET password = ? WHERE id = ?', $val_arr);
             $emailFindReplace = array(
                 '##NAME##' => $user['full_name'],
                 '##PASSWORD##' => $password,
@@ -2048,7 +2051,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $last_login_ip_id,
                 $user['id']
             );
-            pg_query_params($db_lnk, 'UPDATE users SET last_login_date = now(), login_type_id = $1, last_login_ip_id = $2 WHERE id = $3', $val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE users SET last_login_date = now(), login_type_id = ?, last_login_ip_id = ? WHERE id = ?', $val_arr);
             unset($user['password']);
             $user_agent = !empty($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
             $val_arr = array(
@@ -2056,7 +2059,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $last_login_ip_id,
                 $user_agent
             );
-            pg_query_params($db_lnk, 'INSERT INTO user_logins (created, modified, user_id, ip_id, user_agent) VALUES (now(), now(), $1, $2, $3)', $val_arr);
+            pdoQueryStm($db_lnk, 'INSERT INTO user_logins (created, modified, user_id, ip_id, user_agent) VALUES (now(), now(), ?, ?, ?)', $val_arr);
             $role_val_arr = array(
                 $user['role_id']
             );
@@ -2126,7 +2129,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     getCryptHash($r_post['password']) ,
                     $r_resource_vars['users']
                 );
-                pg_query_params($db_lnk, 'UPDATE users SET (password) = ($1) WHERE id = $2', $res_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE users SET password = ? WHERE id = ?', $res_val_arr);
                 if (is_plugin_enabled('r_chat') && $jabberHost) {
                     xmppChangePassword($r_post, $user);
                 }
@@ -2181,15 +2184,15 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         getCryptHash($r_post['password']) ,
                         $r_resource_vars['users']
                     );
-                    pg_query_params($db_lnk, 'UPDATE users SET (password) = ($1) WHERE id = $2', $res_val_arr);
+                    pdoQueryStm($db_lnk, 'UPDATE users SET password = ? WHERE id = ?', $res_val_arr);
                     if (is_plugin_enabled('r_chat') && $jabberHost) {
                         xmppChangePassword($r_post, $user);
                     }
                     $conditions = array(
                         $authUser['username']
                     );
-                    pg_query_params($db_lnk, 'DELETE FROM oauth_access_tokens WHERE user_id= $1', $conditions);
-                    pg_query_params($db_lnk, 'DELETE FROM oauth_refresh_tokens WHERE user_id= $1', $conditions);
+                    pdoQueryStm($db_lnk, 'DELETE FROM oauth_access_tokens WHERE user_id= ?', $conditions);
+                    pdoQueryStm($db_lnk, 'DELETE FROM oauth_refresh_tokens WHERE user_id= ?', $conditions);
                     if ($authUser['role_id'] == 1) {
                         $emailFindReplace = array(
                             '##PASSWORD##' => $r_post['password']
@@ -2259,7 +2262,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $profile_picture_path,
                     $r_resource_vars['users']
                 );
-                pg_query_params($db_lnk, 'UPDATE users SET profile_picture_path = $1 WHERE id = $2', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE users SET profile_picture_path = ? WHERE id = ?', $qry_val_arr);
             } else {
                 $no_error = false;
                 $msg = 1;
@@ -2338,13 +2341,13 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         }
                     }
                 }
-                pg_query_params($db_lnk, 'UPDATE users SET full_name = $1, about_me = $2, initials = $3, is_send_newsletter = $4, timezone = $5 WHERE id = $6', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE users SET full_name = ?, about_me = ?, initials = ?, is_send_newsletter = ?, timezone = ? WHERE id = ?', $qry_val_arr);
                 if (!empty($_POST['email'])) {
                     $qry_val_arr = array(
                         $_POST['email'],
                         $r_resource_vars['users']
                     );
-                    pg_query_params($db_lnk, 'UPDATE users SET email= $1 WHERE id = $2', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'UPDATE users SET email= ? WHERE id = ?', $qry_val_arr);
                 }
             }
         }
@@ -2370,7 +2373,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $value,
                 trim($key)
             );
-            pg_query_params($db_lnk, 'UPDATE settings SET value = $1 WHERE name = $2', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE settings SET value = ? WHERE name = ?', $qry_val_arr);
         }
         $response = array(
             'success' => 'Settings updated successfully.'
@@ -2435,32 +2438,32 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $r_post['user_id']
                     );
                     $response['activity'] = insertActivity($authUser['id'], $comment, 'add_board', $foreign_id);
-                    pg_query_params($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), $1, $2, 1)', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), ?, ?, 1)', $qry_val_arr);
                     $qry_val_arr = array(
                         $row['id'],
                         $r_post['user_id'],
                         true
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO board_subscribers (created, modified, board_id , user_id, is_subscribed) VALUES (now(), now(), $1, $2, $3)', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO board_subscribers (created, modified, board_id , user_id, is_subscribed) VALUES (now(), now(), ?, ?, ?)', $qry_val_arr);
                     if (!empty($row['board_visibility']) && $row['board_visibility'] == 1 && !empty($r_post['organization_id'])) {
                         $qry_val_arr = array(
                             $r_post['organization_id']
                         );
-                        $organization_users = pg_query_params($db_lnk, 'SELECT * FROM organizations_users WHERE organization_id = $1', $qry_val_arr);
-                        while ($organization_user = pg_fetch_assoc($organization_users)) {
+                        $organization_users = pdoQueryStm($db_lnk, 'SELECT * FROM organizations_users WHERE organization_id = ?', $qry_val_arr);
+                        while ($organization_user = $organization_users->fetch(PDO::FETCH_ASSOC)) {
                             if (!empty($organization_user)) {
                                 if ($organization_user['user_id'] != $row['user_id']) {
                                     $qry_val_arr = array(
                                         $row['id'],
                                         $organization_user['user_id']
                                     );
-                                    pg_query_params($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), $1, $2, 2)', $qry_val_arr);
+                                    pdoQueryStm($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), ?, ?, 2)', $qry_val_arr);
                                     $qry_val_arr = array(
                                         $row['id'],
                                         $organization_user['user_id'],
                                         true
                                     );
-                                    pg_query_params($db_lnk, 'INSERT INTO board_subscribers (created, modified, board_id , user_id, is_subscribed) VALUES (now(), now(), $1, $2, $3)', $qry_val_arr);
+                                    pdoQueryStm($db_lnk, 'INSERT INTO board_subscribers (created, modified, board_id , user_id, is_subscribed) VALUES (now(), now(), ?, ?, ?)', $qry_val_arr);
                                 }
                             }
                         }
@@ -2475,8 +2478,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                 $position
                             );
                             $s_sql = 'INSERT INTO lists (created, modified, board_id, name, user_id, position) VALUES';
-                            $s_sql.= '(now(), now(), $1, $2, $3, $4)';
-                            pg_query_params($db_lnk, $s_sql, $qry_val_arr);
+                            $s_sql.= '(now(), now(), ?, ?, ?, ?)';
+                            pdoQueryStm($db_lnk, $s_sql, $qry_val_arr);
                             $position++;
                         }
                     }
@@ -2503,7 +2506,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $r_resource_vars['boards'],
                 $authUser['id']
             );
-            $result = pg_query_params($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, board_id, user_id, is_starred) VALUES (now(), now(), $1, $2, true) RETURNING id', $qry_val_arr);
+            $result = pdoQueryStm($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, board_id, user_id, is_starred) VALUES (now(), now(), ?, ?, true) RETURNING id', $qry_val_arr);
         } else {
             $subcriber = convertBooleanValues($table_name, $subcriber);
             if ($subcriber['is_starred'] == 1) {
@@ -2512,23 +2515,24 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $r_resource_vars['boards'],
                     $authUser['id']
                 );
-                $result = pg_query_params($db_lnk, 'UPDATE ' . $table_name . ' SET is_starred = $1 Where  board_id = $2 and user_id = $3 RETURNING id', $qry_val_arr);
+                $result = pdoQueryStm($db_lnk, 'UPDATE ' . $table_name . ' SET is_starred = ? Where  board_id = ? and user_id = ? RETURNING id', $qry_val_arr);
             } else {
                 $qry_val_arr = array(
                     1,
                     $r_resource_vars['boards'],
                     $authUser['id']
                 );
-                $result = pg_query_params($db_lnk, 'UPDATE ' . $table_name . ' SET is_starred = $1 Where  board_id = $2 and user_id = $3 RETURNING id', $qry_val_arr);
+                $result = pdoQueryStm($db_lnk, 'UPDATE ' . $table_name . ' SET is_starred = ? Where  board_id = ? and user_id = ? RETURNING id', $qry_val_arr);
             }
         }
-        $star = pg_fetch_assoc($result);
+        $star = $result->fetch(PDO::FETCH_ASSOC);
         $response['id'] = $star['id'];
         if ($sql && ($sql !== true) && !empty($json) && !empty($response['id'])) {
-            if ($result = pg_query_params($db_lnk, $sql, array())) {
-                $count = pg_num_rows($result);
+            if ($result = pdoQueryStm($db_lnk, $sql, array())) {
+                $rows = $result->fetchAll(PDO::FETCH_NUM);
+                $count = count($rows);
                 $i = 0;
-                while ($row = pg_fetch_row($result)) {
+                foreach ($rows as $row) {
                     if ($i == 0 && $count > 1) {
                         echo '[';
                     }
@@ -2542,7 +2546,6 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         }
                     }
                 }
-                pg_free_result($result);
             }
         } else {
             echo json_encode($response);
@@ -2555,29 +2558,30 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['boards'],
             $authUser['id']
         );
+        //TODO: Verrify Returning
         $subcriber = executeQuery('SELECT id, is_subscribed FROM ' . $table_name . ' WHERE board_id = ? and user_id = ?', $qry_val_arr);
         if (!$subcriber) {
             $qry_val_arr = array(
                 $r_resource_vars['boards'],
                 $authUser['id']
             );
-            $result = pg_query_params($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, board_id, user_id, is_subscribed) VALUES (now(), now(), $1, $2, true) RETURNING *', $qry_val_arr);
+            $result = pdoQueryStm($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, board_id, user_id, is_subscribed) VALUES (now(), now(), ?, ?, true) RETURNING *', $qry_val_arr);
         } else {
             if ($subcriber['is_subscribed'] == 1) {
                 $qry_val_arr = array(
                     $r_resource_vars['boards'],
                     $authUser['id']
                 );
-                $result = pg_query_params($db_lnk, 'UPDATE ' . $table_name . ' SET is_subscribed = false Where  board_id = $1 and user_id = $2 RETURNING *', $qry_val_arr);
+                $result = pdoQueryStm($db_lnk, 'UPDATE ' . $table_name . ' SET is_subscribed = false Where  board_id = ? and user_id = ? RETURNING *', $qry_val_arr);
             } else {
                 $qry_val_arr = array(
                     $r_resource_vars['boards'],
                     $authUser['id']
                 );
-                $result = pg_query_params($db_lnk, 'UPDATE ' . $table_name . ' SET is_subscribed = True Where  board_id = $1 and user_id = $2 RETURNING *', $qry_val_arr);
+                $result = pdoQueryStm($db_lnk, 'UPDATE ' . $table_name . ' SET is_subscribed = True Where  board_id = ? and user_id = ? RETURNING *', $qry_val_arr);
             }
         }
-        $_response = pg_fetch_assoc($result);
+        $_response = $result->fetch(PDO::FETCH_ASSOC);
         $response = convertBooleanValues($table_name, $_response);
         echo json_encode($response);
         break;
@@ -2598,8 +2602,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
         $qry_val_arr = array(
             $copied_board_id
         );
-        $sresult = pg_query_params($db_lnk, 'SELECT * FROM boards WHERE id = $1', $qry_val_arr);
-        $srow = pg_fetch_assoc($sresult);
+        $sresult = pdoQueryStm($db_lnk, 'SELECT * FROM boards WHERE id = ?', $qry_val_arr);
+        $srow = $sresult->fetch(PDO::FETCH_ASSOC);
         unset($srow['id']);
         unset($srow['created']);
         unset($srow['modified']);
@@ -2639,10 +2643,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_resource_vars['boards']
                 );
-                $boards_users = pg_query_params($db_lnk, 'SELECT id, ' . $boards_user_fields . ' FROM boards_users WHERE board_id = $1', $qry_val_arr);
-                if ($boards_users && pg_num_rows($boards_users)) {
+                $boards_users = pdoQueryFetch($db_lnk, 'SELECT id, ' . $boards_user_fields . ' FROM boards_users WHERE board_id = ?', $qry_val_arr);
+                if (count($boards_users)) {
                     $boards_user_fields = 'created, modified, board_id, ' . $boards_user_fields;
-                    while ($boards_user = pg_fetch_object($boards_users)) {
+                    foreach ($boards_users as $boards_user) {
                         $boards_user_values = array();
                         array_push($boards_user_values, 'now()', 'now()', $new_board_id);
                         foreach ($boards_user as $key => $value) {
@@ -2658,10 +2662,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         }
                         $boards_user_val = '';
                         for ($i = 1, $len = count($boards_user_values); $i <= $len; $i++) {
-                            $boards_user_val.= '$' . $i;
+                            $boards_user_val.= '?';
                             $boards_user_val.= ($i != $len) ? ', ' : '';
                         }
-                        pg_query_params($db_lnk, 'INSERT INTO boards_users (' . $boards_user_fields . ') VALUES (' . $boards_user_val . ')', $boards_user_values);
+                        pdoQueryStm($db_lnk, 'INSERT INTO boards_users (' . $boards_user_fields . ') VALUES (' . $boards_user_val . ')', $boards_user_values);
                     }
                 }
                 //Copy board subscribers
@@ -2669,10 +2673,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_resource_vars['boards']
                 );
-                $boards_subscribers = pg_query_params($db_lnk, 'SELECT id, ' . $boards_subscriber_fields . ' FROM board_subscribers WHERE board_id = $1', $qry_val_arr);
-                if ($boards_subscribers && pg_num_rows($boards_subscribers)) {
+                $boards_subscribers = pdoQueryFetch($db_lnk, 'SELECT id, ' . $boards_subscriber_fields . ' FROM board_subscribers WHERE board_id = ?', $qry_val_arr);
+                if ($boards_subscribers && count($boards_subscribers)) {
                     $boards_subscriber_fields = 'created, modified, board_id, ' . $boards_subscriber_fields;
-                    while ($boards_subscriber = pg_fetch_object($boards_subscribers)) {
+                    foreach ($boards_subscribers as $boards_subscriber) {
                         $boards_subscriber_values = array();
                         array_push($boards_subscriber_values, 'now()', 'now()', $new_board_id);
                         foreach ($boards_subscriber as $key => $value) {
@@ -2688,10 +2692,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         }
                         $boards_subscriber_val = '';
                         for ($i = 1, $len = count($boards_subscriber_values); $i <= $len; $i++) {
-                            $boards_subscriber_val.= '$' . $i;
+                            $boards_subscriber_val.= '?';
                             $boards_subscriber_val.= ($i != $len) ? ', ' : '';
                         }
-                        pg_query_params($db_lnk, 'INSERT INTO board_subscribers (' . $boards_subscriber_fields . ') VALUES (' . $boards_subscriber_val . ')', $boards_subscriber_values);
+                        pdoQueryStm($db_lnk, 'INSERT INTO board_subscribers (' . $boards_subscriber_fields . ') VALUES (' . $boards_subscriber_val . ')', $boards_subscriber_values);
                     }
                 }
                 //Copy board star
@@ -2699,10 +2703,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_resource_vars['boards']
                 );
-                $boards_stars = pg_query_params($db_lnk, 'SELECT id, ' . $boards_star_fields . ' FROM board_stars WHERE board_id = $1', $qry_val_arr);
-                if ($boards_stars && pg_num_rows($boards_stars)) {
+                $boards_stars = pdoQueryFetch($db_lnk, 'SELECT id, ' . $boards_star_fields . ' FROM board_stars WHERE board_id = ?', $qry_val_arr);
+                if ($boards_stars && count($boards_stars)) {
                     $boards_star_fields = 'created, modified, board_id, ' . $boards_star_fields;
-                    while ($boards_star = pg_fetch_object($boards_stars)) {
+                    foreach ($boards_stars as $boards_star) {
                         $boards_star_values = array();
                         array_push($boards_star_values, 'now()', 'now()', $new_board_id);
                         foreach ($boards_star as $key => $value) {
@@ -2718,26 +2722,26 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         }
                         $boards_star_val = '';
                         for ($i = 1, $len = count($boards_star_values); $i <= $len; $i++) {
-                            $boards_star_val.= '$' . $i;
+                            $boards_star_val.= '?';
                             $boards_star_val.= ($i != $len) ? ', ' : '';
                         }
-                        pg_query_params($db_lnk, 'INSERT INTO board_stars (' . $boards_star_fields . ') VALUES (' . $boards_star_val . ')', $boards_star_values);
+                        pdoQueryStm($db_lnk, 'INSERT INTO board_stars (' . $boards_star_fields . ') VALUES (' . $boards_star_val . ')', $boards_star_values);
                     }
                 }
                 if ($keepcards) {
                     $qry_val_arr = array(
                         $r_resource_vars['boards']
                     );
-                    $lists = pg_query_params($db_lnk, 'SELECT id, name, position, is_archived, card_count, lists_subscriber_count FROM lists WHERE board_id = $1', $qry_val_arr);
+                    $lists = pdoQueryFetch($db_lnk, 'SELECT id, name, position, is_archived, card_count, lists_subscriber_count FROM lists WHERE board_id = ?', $qry_val_arr);
                 } else {
                     $qry_val_arr = array(
                         $r_resource_vars['boards']
                     );
-                    $lists = pg_query_params($db_lnk, 'SELECT id, name, position, is_archived, lists_subscriber_count FROM lists WHERE board_id = $1', $qry_val_arr);
+                    $lists = pdoQueryFetch($db_lnk, 'SELECT id, name, position, is_archived, lists_subscriber_count FROM lists WHERE board_id = ?', $qry_val_arr);
                 }
                 if ($lists) {
                     // Copy lists
-                    while ($list = pg_fetch_object($lists)) {
+                    foreach ($lists as $list) {
                         $list_id = $list->id;
                         $list_fields = 'created, modified, board_id, user_id';
                         $list_values = array();
@@ -2754,22 +2758,22 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         }
                         $list_val = '';
                         for ($i = 1, $len = count($list_values); $i <= $len; $i++) {
-                            $list_val.= '$' . $i;
+                            $list_val.= '?';
                             $list_val.= ($i != $len) ? ', ' : '';
                         }
-                        $lists_result = pg_query_params($db_lnk, 'INSERT INTO lists (' . $list_fields . ') VALUES (' . $list_val . ') RETURNING id', $list_values);
+                        $lists_result = pdoQueryStm($db_lnk, 'INSERT INTO lists (' . $list_fields . ') VALUES (' . $list_val . ') RETURNING id', $list_values);
                         if ($lists_result) {
-                            $list_result = pg_fetch_assoc($lists_result);
+                            $list_result =$lists_result->fetch(PDO::FETCH_ASSOC);
                             $new_list_id = $list_result['id'];
                             //Copy list subscribers
                             $lists_subscriber_fields = 'user_id, is_subscribed';
                             $qry_val_arr = array(
                                 $list_id
                             );
-                            $lists_subscribers = pg_query_params($db_lnk, 'SELECT id, ' . $lists_subscriber_fields . ' FROM list_subscribers WHERE list_id = $1', $qry_val_arr);
-                            if ($lists_subscribers && pg_num_rows($lists_subscribers)) {
+                            $lists_subscribers = pdoQueryFetch($db_lnk, 'SELECT id, ' . $lists_subscriber_fields . ' FROM list_subscribers WHERE list_id = ?', $qry_val_arr);
+                            if ($lists_subscribers && count($lists_subscribers)) {
                                 $lists_subscriber_fields = 'created, modified, list_id, ' . $lists_subscriber_fields;
-                                while ($lists_subscriber = pg_fetch_object($lists_subscribers)) {
+                                foreach ($lists_subscribers as $lists_subscriber) {
                                     $lists_subscriber_values = array();
                                     array_push($lists_subscriber_values, 'now()', 'now()', $new_list_id);
                                     foreach ($lists_subscriber as $key => $value) {
@@ -2785,10 +2789,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                     }
                                     $lists_subscriber_val = '';
                                     for ($i = 1, $len = count($lists_subscriber_values); $i <= $len; $i++) {
-                                        $lists_subscriber_val.= '$' . $i;
+                                        $lists_subscriber_val.= '?';
                                         $lists_subscriber_val.= ($i != $len) ? ', ' : '';
                                     }
-                                    pg_query_params($db_lnk, 'INSERT INTO list_subscribers (' . $lists_subscriber_fields . ') VALUES (' . $lists_subscriber_val . ')', $lists_subscriber_values);
+                                    pdoQueryStm($db_lnk, 'INSERT INTO list_subscribers (' . $lists_subscriber_fields . ') VALUES (' . $lists_subscriber_val . ')', $lists_subscriber_values);
                                 }
                             }
                             // Copy cards
@@ -2797,11 +2801,11 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                 $qry_val_arr = array(
                                     $list_id
                                 );
-                                $cards = pg_query_params($db_lnk, 'SELECT id, ' . $card_fields . ' FROM cards WHERE list_id = $1', $qry_val_arr);
+                                $cards = pdoQueryFetch($db_lnk, 'SELECT id, ' . $card_fields . ' FROM cards WHERE list_id = ?', $qry_val_arr);
                             }
-                            if ($keepcards && pg_num_rows($cards)) {
+                            if ($keepcards && count($cards)) {
                                 $card_fields = 'created, modified, board_id, list_id, ' . $card_fields;
-                                while ($card = pg_fetch_object($cards)) {
+                                foreach ($cards as $card) {
                                     $card_id = $card->id;
                                     $card_values = array();
                                     array_push($card_values, 'now()', 'now()', $new_board_id, $new_list_id);
@@ -2818,22 +2822,22 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                     }
                                     $card_val = '';
                                     for ($i = 1, $len = count($card_values); $i <= $len; $i++) {
-                                        $card_val.= '$' . $i;
+                                        $card_val.= '?';
                                         $card_val.= ($i != $len) ? ', ' : '';
                                     }
-                                    $card_result = pg_query_params($db_lnk, 'INSERT INTO cards (' . $card_fields . ') VALUES (' . $card_val . ') RETURNING id', $card_values);
+                                    $card_result = pdoQueryStm($db_lnk, 'INSERT INTO cards (' . $card_fields . ') VALUES (' . $card_val . ') RETURNING id', $card_values);
                                     if ($card_result) {
-                                        $card_result = pg_fetch_assoc($card_result);
+                                        $card_result = $card_result->fetch(PDO::FETCH_ASSOC);
                                         $new_card_id = $card_result['id'];
                                         //Copy card attachments
                                         $attachment_fields = 'name, path, mimetype';
                                         $qry_val_arr = array(
                                             $card_id
                                         );
-                                        $attachments = pg_query_params($db_lnk, 'SELECT id, ' . $attachment_fields . ' FROM card_attachments WHERE card_id = $1', $qry_val_arr);
-                                        if ($attachments && pg_num_rows($attachments)) {
+                                        $attachments = pdoQueryFetch($db_lnk, 'SELECT id, ' . $attachment_fields . ' FROM card_attachments WHERE card_id = ?', $qry_val_arr);
+                                        if ($attachments && count($attachments)) {
                                             $attachment_fields = 'created, modified, board_id, list_id, card_id, ' . $attachment_fields;
-                                            while ($attachment = pg_fetch_object($attachments)) {
+                                            foreach ($attachments as $attachment) {
                                                 $attachment_values = array();
                                                 array_push($attachment_values, 'now()', 'now()', $new_board_id, $new_list_id, $new_card_id);
                                                 foreach ($attachment as $key => $value) {
@@ -2849,10 +2853,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                 }
                                                 $attachment_val = '';
                                                 for ($i = 1, $len = count($attachment_values); $i <= $len; $i++) {
-                                                    $attachment_val.= '$' . $i;
+                                                    $attachment_val.= '?';
                                                     $attachment_val.= ($i != $len) ? ', ' : '';
                                                 }
-                                                pg_query_params($db_lnk, 'INSERT INTO card_attachments (' . $attachment_fields . ') VALUES (' . $attachment_val . ')', $attachment_values);
+                                                pdoQueryStm($db_lnk, 'INSERT INTO card_attachments (' . $attachment_fields . ') VALUES (' . $attachment_val . ')', $attachment_values);
                                             }
                                         }
                                         //Copy checklists
@@ -2860,10 +2864,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                         $qry_val_arr = array(
                                             $card_id
                                         );
-                                        $checklists = pg_query_params($db_lnk, 'SELECT id, ' . $checklist_fields . ' FROM checklists WHERE card_id = $1', $qry_val_arr);
-                                        if ($checklists && pg_num_rows($checklists)) {
+                                        $checklists = pdoQueryFetch($db_lnk, 'SELECT id, ' . $checklist_fields . ' FROM checklists WHERE card_id = ?', $qry_val_arr);
+                                        if ($checklists && count($checklists)) {
                                             $checklist_fields = 'created, modified, card_id, ' . $checklist_fields;
-                                            while ($checklist = pg_fetch_object($checklists)) {
+                                            foreach ($checklists as $checklist) {
                                                 $checklist_values = array();
                                                 array_push($checklist_values, 'now()', 'now()', $new_card_id);
                                                 $checklist_id = $checklist->id;
@@ -2880,22 +2884,23 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                 }
                                                 $checklist_val = '';
                                                 for ($i = 1, $len = count($checklist_values); $i <= $len; $i++) {
-                                                    $checklist_val.= '$' . $i;
+                                                    $checklist_val.= '?';
                                                     $checklist_val.= ($i != $len) ? ', ' : '';
                                                 }
-                                                $checklist_result = pg_query_params($db_lnk, 'INSERT INTO checklists (' . $checklist_fields . ') VALUES (' . $checklist_val . ') RETURNING id', $checklist_values);
+                                                $checklist_result = pdoQueryStm($db_lnk, 'INSERT INTO checklists (' . $checklist_fields . ') VALUES (' . $checklist_val . ')', $checklist_values);
+
                                                 if ($checklist_result) {
-                                                    $checklist_result = pg_fetch_assoc($checklist_result);
+                                                    $checklist_result = ['id' => $db_lnk->lastInsertId()];
                                                     $new_checklist_id = $checklist_result['id'];
                                                     //Copy checklist items
                                                     $checklist_item_fields = 'user_id, name, position';
                                                     $qry_val_array = array(
                                                         $checklist_id
                                                     );
-                                                    $checklist_items = pg_query_params($db_lnk, 'SELECT id, ' . $checklist_item_fields . ' FROM checklist_items WHERE checklist_id = $1', $qry_val_array);
-                                                    if ($checklist_items && pg_num_rows($checklist_items)) {
+                                                    $checklist_items = pdoQueryFetch($db_lnk, 'SELECT id, ' . $checklist_item_fields . ' FROM checklist_items WHERE checklist_id = ?', $qry_val_array);
+                                                    if ($checklist_items && count($checklist_items)) {
                                                         $checklist_item_fields = 'created, modified, card_id, checklist_id, ' . $checklist_item_fields;
-                                                        while ($checklist_item = pg_fetch_object($checklist_items)) {
+                                                        foreach ($checklist_items as $checklist_item) {
                                                             $checklist_item_values = array();
                                                             array_push($checklist_item_values, 'now()', 'now()', $new_card_id, $new_checklist_id);
                                                             foreach ($checklist_item as $key => $value) {
@@ -2911,10 +2916,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                             }
                                                             $checklist_item_val = '';
                                                             for ($i = 1, $len = count($checklist_item_values); $i <= $len; $i++) {
-                                                                $checklist_item_val.= '$' . $i;
+                                                                $checklist_item_val.= '?';
                                                                 $checklist_item_val.= ($i != $len) ? ', ' : '';
                                                             }
-                                                            pg_query_params($db_lnk, 'INSERT INTO checklist_items (' . $checklist_item_fields . ') VALUES (' . $checklist_item_val . ')', $checklist_item_values);
+                                                            pdoQueryStm($db_lnk, 'INSERT INTO checklist_items (' . $checklist_item_fields . ') VALUES (' . $checklist_item_val . ')', $checklist_item_values);
                                                         }
                                                     }
                                                 }
@@ -2925,10 +2930,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                         $qry_val_arr = array(
                                             $card_id
                                         );
-                                        $card_voters = pg_query_params($db_lnk, 'SELECT id, ' . $card_voter_fields . ' FROM card_voters WHERE card_id = $1', $qry_val_arr);
-                                        if ($card_voters && pg_num_rows($card_voters)) {
+                                        $card_voters = pdoQueryFetch($db_lnk, 'SELECT id, ' . $card_voter_fields . ' FROM card_voters WHERE card_id = ?', $qry_val_arr);
+                                        if ($card_voters && count($card_voters)) {
                                             $card_voter_fields = 'created, modified, card_id, ' . $card_voter_fields;
-                                            while ($card_voter = pg_fetch_object($card_voters)) {
+                                            foreach ($card_voters as $card_voter) {
                                                 $card_voter_values = array();
                                                 array_push($card_voter_values, 'now()', 'now()', $new_card_id);
                                                 foreach ($card_voter as $key => $value) {
@@ -2944,10 +2949,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                 }
                                                 $card_voter_val = '';
                                                 for ($i = 1, $len = count($card_voter_values); $i <= $len; $i++) {
-                                                    $card_voter_val.= '$' . $i;
+                                                    $card_voter_val.= '?';
                                                     $card_voter_val.= ($i != $len) ? ', ' : '';
                                                 }
-                                                pg_query_params($db_lnk, 'INSERT INTO card_voters (' . $card_voter_fields . ') VALUES (' . $card_voter_val . ')', $card_voter_values);
+                                                pdoQueryStm($db_lnk, 'INSERT INTO card_voters (' . $card_voter_fields . ') VALUES (' . $card_voter_val . ')', $card_voter_values);
                                             }
                                         }
                                         //Copy card labels
@@ -2955,10 +2960,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                         $qry_val_arr = array(
                                             $card_id
                                         );
-                                        $cards_labels = pg_query_params($db_lnk, 'SELECT id, ' . $cards_label_fields . ' FROM cards_labels WHERE card_id = $1', $qry_val_arr);
-                                        if ($cards_labels && pg_num_rows($cards_labels)) {
+                                        $cards_labels = pdoQueryFetch($db_lnk, 'SELECT id, ' . $cards_label_fields . ' FROM cards_labels WHERE card_id = ?', $qry_val_arr);
+                                        if ($cards_labels && count($cards_labels)) {
                                             $cards_label_fields = 'created, modified, board_id, list_id, card_id, ' . $cards_label_fields;
-                                            while ($cards_label = pg_fetch_object($cards_labels)) {
+                                            foreach ($cards_labels as $cards_label) {
                                                 $cards_label_values = array();
                                                 array_push($cards_label_values, 'now()', 'now()', $new_board_id, $new_list_id, $new_card_id);
                                                 foreach ($cards_label as $key => $value) {
@@ -2974,10 +2979,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                 }
                                                 $cards_label_val = '';
                                                 for ($i = 1, $len = count($cards_label_values); $i <= $len; $i++) {
-                                                    $cards_label_val.= '$' . $i;
+                                                    $cards_label_val.= '?';
                                                     $cards_label_val.= ($i != $len) ? ', ' : '';
                                                 }
-                                                pg_query_params($db_lnk, 'INSERT INTO cards_labels (' . $cards_label_fields . ') VALUES (' . $cards_label_val . ')', $cards_label_values);
+                                                pdoQueryStm($db_lnk, 'INSERT INTO cards_labels (' . $cards_label_fields . ') VALUES (' . $cards_label_val . ')', $cards_label_values);
                                             }
                                         }
                                         //Copy card subscribers
@@ -2985,10 +2990,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                         $qry_val_arr = array(
                                             $card_id
                                         );
-                                        $cards_subscribers = pg_query_params($db_lnk, 'SELECT id, ' . $cards_subscriber_fields . ' FROM card_subscribers WHERE card_id = $1', $qry_val_arr);
-                                        if ($cards_subscribers && pg_num_rows($cards_subscribers)) {
+                                        $cards_subscribers = pdoQueryFetch($db_lnk, 'SELECT id, ' . $cards_subscriber_fields . ' FROM card_subscribers WHERE card_id = ?', $qry_val_arr);
+                                        if ($cards_subscribers && count($cards_subscribers)) {
                                             $cards_subscriber_fields = 'created, modified, card_id, ' . $cards_subscriber_fields;
-                                            while ($cards_subscriber = pg_fetch_object($cards_subscribers)) {
+                                            foreach ($cards_subscribers as $cards_subscriber) {
                                                 $cards_subscriber_values = array();
                                                 array_push($cards_subscriber_values, 'now()', 'now()', $new_card_id);
                                                 foreach ($cards_subscriber as $key => $value) {
@@ -3004,10 +3009,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                 }
                                                 $cards_subscriber_val = '';
                                                 for ($i = 1, $len = count($cards_subscriber_values); $i <= $len; $i++) {
-                                                    $cards_subscriber_val.= '$' . $i;
+                                                    $cards_subscriber_val.= '?';
                                                     $cards_subscriber_val.= ($i != $len) ? ', ' : '';
                                                 }
-                                                pg_query_params($db_lnk, 'INSERT INTO card_subscribers (' . $cards_subscriber_fields . ') VALUES (' . $cards_subscriber_val . ')', $cards_subscriber_values);
+                                                pdoQueryStm($db_lnk, 'INSERT INTO card_subscribers (' . $cards_subscriber_fields . ') VALUES (' . $cards_subscriber_val . ')', $cards_subscriber_values);
                                             }
                                         }
                                         //Copy card users
@@ -3015,10 +3020,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                         $qry_val_arr = array(
                                             $card_id
                                         );
-                                        $cards_users = pg_query_params($db_lnk, 'SELECT id, ' . $cards_user_fields . ' FROM cards_users WHERE card_id = $1', $qry_val_arr);
-                                        if ($cards_users && pg_num_rows($cards_users)) {
+                                        $cards_users = pdoQueryFetch($db_lnk, 'SELECT id, ' . $cards_user_fields . ' FROM cards_users WHERE card_id = ?', $qry_val_arr);
+                                        if ($cards_users && count($cards_users)) {
                                             $cards_user_fields = 'created, modified, card_id, ' . $cards_user_fields;
-                                            while ($cards_user = pg_fetch_object($cards_users)) {
+                                            foreach ($cards_users as $cards_user) {
                                                 $cards_user_values = array();
                                                 array_push($cards_user_values, 'now()', 'now()', $new_card_id);
                                                 foreach ($cards_user as $key => $value) {
@@ -3034,10 +3039,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                                                 }
                                                 $cards_user_val = '';
                                                 for ($i = 1, $len = count($cards_user_values); $i <= $len; $i++) {
-                                                    $cards_user_val.= '$' . $i;
+                                                    $cards_user_val.= '?';
                                                     $cards_user_val.= ($i != $len) ? ', ' : '';
                                                 }
-                                                pg_query_params($db_lnk, 'INSERT INTO cards_users (' . $cards_user_fields . ') VALUES (' . $cards_user_val . ')', $cards_user_values);
+                                                pdoQueryStm($db_lnk, 'INSERT INTO cards_users (' . $cards_user_fields . ') VALUES (' . $cards_user_val . ')', $cards_user_values);
                                             }
                                         }
                                     }
@@ -3049,8 +3054,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_resource_vars['boards']
                 );
-                $sresult = pg_query_params($db_lnk, 'SELECT name FROM boards WHERE id = $1', $qry_val_arr);
-                $srow = pg_fetch_assoc($sresult);
+                $sresult = pdoQueryStm($db_lnk, 'SELECT name FROM boards WHERE id = ?', $qry_val_arr);
+                $srow = $sresult->fetch(PDO::FETCH_ASSOC);
                 $foreign_ids['board_id'] = $new_board_id;
                 $comment = '##USER_NAME## copied this board from ' . $srow['name'];
                 $response['activity'] = insertActivity($authUser['id'], $comment, 'copy_board', $foreign_ids, null, $r_resource_vars['boards']);
@@ -3099,7 +3104,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $r_post['background_picture_path'],
                     $r_resource_vars['boards']
                 );
-                pg_query_params($db_lnk, 'UPDATE boards SET background_picture_url = $1,background_picture_path = $2 WHERE id = $3', $qry_val_array);
+                pdoQueryStm($db_lnk, 'UPDATE boards SET background_picture_url = ?,background_picture_path = ? WHERE id = ?', $qry_val_array);
             } else {
                 $response['error'] = 'File extension not supported. It supports only jpg, png, bmp and gif.';
             }
@@ -3132,8 +3137,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['board_id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT id, name FROM boards WHERE id = $1', $qry_val_arr);
-                $previous_value = pg_fetch_assoc($s_result);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT id, name FROM boards WHERE id = ?', $qry_val_arr);
+                $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
                 $foreign_ids['board_id'] = $r_resource_vars['boards'];
                 $foreign_ids['board_id'] = $r_post['board_id'];
                 $qry_val_arr = array(
@@ -3201,43 +3206,43 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $foreign_ids['list_id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT * FROM lists_listing WHERE id = $1', $qry_val_arr);
-                $list = pg_fetch_assoc($s_result);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT * FROM lists_listing WHERE id = ?', $qry_val_arr);
+                $list =$s_result->fetch(PDO::FETCH_ASSOC);
                 $response['list'] = $list;
                 $qry_val_arr = array(
                     $foreign_ids['list_id']
                 );
-                $attachments = pg_query_params($db_lnk, 'SELECT * FROM card_attachments WHERE list_id = $1 order by created DESC', $qry_val_arr);
-                while ($attachment = pg_fetch_assoc($attachments)) {
+                $attachments = pdoQueryStm($db_lnk, 'SELECT * FROM card_attachments WHERE list_id = ? order by created DESC', $qry_val_arr);
+                while ($attachment = $attachments->fetch(PDO::FETCH_ASSOC)) {
                     $response['list']['attachments'][] = $attachment;
                 }
                 $qry_val_arr = array(
                     $foreign_ids['list_id']
                 );
-                $activities = pg_query_params($db_lnk, 'SELECT * FROM activities_listing WHERE list_id = $1', $qry_val_arr);
-                while ($activity = pg_fetch_assoc($activities)) {
+                $activities = pdoQueryStm($db_lnk, 'SELECT * FROM activities_listing WHERE list_id = ?', $qry_val_arr);
+                while ($activity =$activities->fetch(PDO::FETCH_ASSOC)) {
                     $response['list']['activities'][] = $activity;
                 }
                 $condition = array(
                     $foreign_ids['list_id']
                 );
-                $cards = pg_query_params($db_lnk, 'select * from cards where list_id = $1', $condition);
-                while ($card = pg_fetch_assoc($cards)) {
+                $cards = pdoQueryStm($db_lnk, 'select * from cards where list_id = ?', $condition);
+                while ($card =$cards->fetch(PDO::FETCH_ASSOC)) {
                     $response['list']['checklists'] = $response['list']['checklists_items'] = array();
                     if (!empty($card)) {
                         $condition = array(
                             $card['id']
                         );
-                        $checklists = pg_query_params($db_lnk, 'select * from checklists where card_id = $1', $condition);
-                        while ($checklist = pg_fetch_assoc($checklists)) {
+                        $checklists = pdoQueryStm($db_lnk, 'select * from checklists where card_id = ?', $condition);
+                        while ($checklist =$checklists->fetch(PDO::FETCH_ASSOC)) {
                             if (!empty($checklist)) {
                                 $response['list']['checklists'][] = $checklist;
                                 $condition = array(
                                     $card['id'],
                                     $checklist['id']
                                 );
-                                $checklist_items = pg_query_params($db_lnk, 'select * from checklist_items where card_id = $1 AND checklist_id = $2', $condition);
-                                while ($checklist_item = pg_fetch_assoc($checklist_items)) {
+                                $checklist_items = pdoQueryStm($db_lnk, 'select * from checklist_items where card_id = ? AND checklist_id = ?', $condition);
+                                while ($checklist_item = $checklist_items->fetch(PDO::FETCH_ASSOC)) {
                                     if (!empty($checklist_item)) {
                                         $response['list']['checklists_items'][] = $checklist_item;
                                     }
@@ -3249,8 +3254,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $foreign_ids['list_id']
                 );
-                $labels = pg_query_params($db_lnk, 'SELECT * FROM cards_labels_listing WHERE list_id = $1', $qry_val_arr);
-                while ($label = pg_fetch_assoc($labels)) {
+                $labels = pdoQueryStm($db_lnk, 'SELECT * FROM cards_labels_listing WHERE list_id = ?', $qry_val_arr);
+                while ($label = $labels->fetch(PDO::FETCH_ASSOC)) {
                     $response['list']['labels'][] = $label;
                 }
                 $response['list']['cards'] = json_decode($response['list']['cards'], true);
@@ -3266,7 +3271,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $r_post['board_id'],
                         $response['id']
                     );
-                    pg_query_params($db_lnk, 'UPDATE boards SET default_email_list_id = $2 WHERE id = $1', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'UPDATE boards SET default_email_list_id = ? WHERE id = ?', $qry_val_arr);
                 }
             }
         }
@@ -3280,8 +3285,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['lists'],
             $r_post['user_id']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT is_subscribed FROM list_subscribers WHERE list_id = $1 and user_id = $2', $qry_val_arr);
-        $check_subscribed = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT is_subscribed FROM list_subscribers WHERE list_id = ? and user_id = ?', $qry_val_arr);
+        $check_subscribed = $s_result->fetch(PDO::FETCH_ASSOC);
         if (!empty($check_subscribed)) {
             $is_subscribed = ($r_post['is_subscribed']) ? true : false;
             $qry_val_arr = array(
@@ -3289,7 +3294,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $r_resource_vars['lists'],
                 $r_post['user_id']
             );
-            pg_query_params($db_lnk, 'UPDATE list_subscribers SET is_subscribed = $1 WHERE list_id = $2 and user_id = $3', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE list_subscribers SET is_subscribed = ? WHERE list_id = ? and user_id = ?', $qry_val_arr);
         } else {
             $r_post['list_id'] = $r_resource_vars['lists'];
             $sql = true;
@@ -3312,8 +3317,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_post['board_id'],
             $r_post['list_id']
         );
-        $pos_res = pg_query_params($db_lnk, 'SELECT position FROM cards WHERE board_id = $1 AND list_id = $2 ORDER BY position DESC LIMIT 1', $qry_val_arr);
-        $position = pg_fetch_array($pos_res);
+        $pos_res = pdoQueryStm($db_lnk, 'SELECT position FROM cards WHERE board_id = ? AND list_id = ? ORDER BY position DESC LIMIT 1', $qry_val_arr);
+        $position =$pos_res->fetch(PDO::FETCH_NUM);
         if (empty($r_post['due_date'])) {
             unset($r_post['due_date']);
         }
@@ -3333,8 +3338,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['list_id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT name FROM lists WHERE id = $1', $qry_val_arr);
-                $list = pg_fetch_assoc($s_result);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT name FROM lists WHERE id = ?', $qry_val_arr);
+                $list =$s_result->fetch(PDO::FETCH_ASSOC);
                 $foreign_ids['board_id'] = $r_post['board_id'];
                 $foreign_ids['card_id'] = $response['id'];
                 $foreign_ids['list_id'] = $r_post['list_id'];
@@ -3342,9 +3347,9 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $response['activity'] = insertActivity($authUser['id'], $comment, 'add_card', $foreign_ids, '', $r_post['list_id']);
                 if (!empty($r_post['members'])) {
                     foreach ($r_post['members'] as $member) {
-                        $s_usql = 'INSERT INTO cards_users (created, modified, card_id, user_id) VALUES(now(), now(), ' . $response['id'] . ', ' . $member . ') RETURNING id';
-                        $s_result = pg_query_params($db_lnk, $s_usql, array());
-                        $card_user = pg_fetch_assoc($s_result);
+                        $s_usql = 'INSERT INTO cards_users (created, modified, card_id, user_id) VALUES(now(), now(), ' . $response['id'] . ', ' . $member . ')';
+                        pdoQueryStm($db_lnk, $s_usql, array());
+                        $card_user = ['id' => $db_lnk->lastInsertId()];
                         $qry_val_arr = array(
                             $member
                         );
@@ -3362,14 +3367,14 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $qry_val_arr = array(
                             $label_name
                         );
-                        $s_result = pg_query_params($db_lnk, 'SELECT id FROM labels WHERE name = $1', $qry_val_arr);
-                        $label = pg_fetch_assoc($s_result);
+                        $s_result = pdoQueryStm($db_lnk, 'SELECT id FROM labels WHERE name = ?', $qry_val_arr);
+                        $label =$s_result->fetch(PDO::FETCH_ASSOC);
                         if (empty($label)) {
                             $qry_val_arr = array(
                                 $label_name
                             );
-                            $s_result = pg_query_params($db_lnk, $s_sql = 'INSERT INTO labels (created, modified, name) VALUES (now(), now(), $1) RETURNING id', $qry_val_arr);
-                            $label = pg_fetch_assoc($s_result);
+                            $s_result = pdoQueryStm($db_lnk, $s_sql = 'INSERT INTO labels (created, modified, name) VALUES (now(), now(), ?)', $qry_val_arr);
+                            $label = ['id' => $db_lnk->lastInsertId()];
                         }
                         $r_post['label_id'] = $label['id'];
                         $r_post['card_id'] = $row['id'];
@@ -3381,7 +3386,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                             $r_post['board_id'],
                             $r_post['list_id']
                         );
-                        pg_query_params($db_lnk, 'INSERT INTO cards_labels (created, modified, card_id, label_id, board_id, list_id) VALUES (now(), now(), $1, $2, $3, $4) RETURNING *', $qry_val_arr);
+                        pdoQueryStm($db_lnk, 'INSERT INTO cards_labels (created, modified, card_id, label_id, board_id, list_id) VALUES (now(), now(), ?, ?, ?, ?) RETURNING *', $qry_val_arr);
                     }
                     $comment = '##USER_NAME## added label(s) to this card ##CARD_LINK## - ##LABEL_NAME##';
                     insertActivity($authUser['id'], $comment, 'add_card_label', $foreign_ids, null, $r_post['label_id']);
@@ -3389,15 +3394,15 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $cards_users = pg_query_params($db_lnk, 'SELECT * FROM cards_users_listing WHERE card_id = $1', $qry_val_arr);
-                while ($cards_user = pg_fetch_assoc($cards_users)) {
+                $cards_users = pdoQueryStm($db_lnk, 'SELECT * FROM cards_users_listing WHERE card_id = ?', $qry_val_arr);
+                while ($cards_user = $cards_users->fetch(PDO::FETCH_ASSOC)) {
                     $response['cards_users'][] = $cards_user;
                 }
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $cards_labels = pg_query_params($db_lnk, 'SELECT * FROM cards_labels_listing WHERE card_id = $1', $qry_val_arr);
-                while ($cards_label = pg_fetch_assoc($cards_labels)) {
+                $cards_labels = pdoQueryStm($db_lnk, 'SELECT * FROM cards_labels_listing WHERE card_id = ?', $qry_val_arr);
+                while ($cards_label = $cards_labels->fetch(PDO::FETCH_ASSOC)) {
                     $response['cards_labels'][] = $cards_label;
                 }
             }
@@ -3437,7 +3442,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $activity_count,
                     $r_post['card_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE cards SET comment_count = $1 WHERE id = $2', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE cards SET comment_count = ? WHERE id = ?', $qry_val_arr);
                 $id_converted = base_convert($response['id'], 10, 36);
                 $materialized_path = sprintf("%08s", $id_converted);
                 if (!empty($prev_message['materialized_path'])) {
@@ -3461,17 +3466,17 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $root,
                     $response['id']
                 );
-                pg_query_params($db_lnk, 'UPDATE activities SET materialized_path = $1, path = $2, depth = $3, root = $4 WHERE id = $5', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE activities SET materialized_path = ?, path = ?, depth = ?, root = ? WHERE id = ?', $qry_val_arr);
                 $qry_val_arr = array(
                     $r_post['freshness_ts'],
                     $root
                 );
-                pg_query_params($db_lnk, 'UPDATE activities SET freshness_ts = $1 WHERE root = $2', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE activities SET freshness_ts = ? WHERE root = ?', $qry_val_arr);
                 $qry_val_arr = array(
                     $root
                 );
-                $act_res = pg_query_params($db_lnk, 'SELECT * FROM activities WHERE root = $1', $qry_val_arr);
-                $response['activity'] = pg_fetch_assoc($act_res);
+                $act_res = pdoQueryStm($db_lnk, 'SELECT * FROM activities WHERE root = ?', $qry_val_arr);
+                $response['activity'] = $act_res->fetch(PDO::FETCH_ASSOC);
             }
         }
         echo json_encode($response);
@@ -3487,8 +3492,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_resource_vars['cards'],
             $r_post['user_id']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT is_subscribed FROM card_subscribers WHERE card_id = $1 and user_id = $2', $qry_val_arr);
-        $check_subscribed = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT is_subscribed FROM card_subscribers WHERE card_id = ? and user_id = ?', $qry_val_arr);
+        $check_subscribed = $s_result->fetch(PDO::FETCH_ASSOC);
         if (!empty($check_subscribed)) {
             $is_subscribed = ($r_post['is_subscribed']) ? 'true' : 'false';
             $qry_val_arr = array(
@@ -3496,14 +3501,15 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $r_resource_vars['cards'],
                 $r_post['user_id']
             );
-            $s_result = pg_query_params($db_lnk, 'UPDATE card_subscribers SET is_subscribed = $1 WHERE card_id = $2 and user_id = $3 RETURNING id', $qry_val_arr);
-            $subscribe = pg_fetch_assoc($s_result);
+            $s_result = pdoQueryStm($db_lnk, 'UPDATE card_subscribers SET is_subscribed = ? WHERE card_id = ? and user_id = ? RETURNING id', $qry_val_arr);
+            $subscribe = $s_result->fetch(PDO::FETCH_ASSOC);
             $response['id'] = $subscribe['id'];
             if ($sql && ($sql !== true) && !empty($json) && !empty($response['id'])) {
-                if ($result = pg_query_params($db_lnk, $sql, array())) {
-                    $count = pg_num_rows($result);
+                if ($result = pdoQueryStm($db_lnk, $sql, array())) {
+                    $rows = $result->fetch(PDO::FETCH_NUM);
+                    $count = count($rows);
                     $i = 0;
-                    while ($row = pg_fetch_row($result)) {
+                    foreach ($rows as $row) {
                         if ($i == 0 && $count > 1) {
                             echo '[';
                         }
@@ -3517,7 +3523,6 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                             }
                         }
                     }
-                    pg_free_result($result);
                 }
             }
         } else {
@@ -3566,8 +3571,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $qry_val_arr = array(
                         $response['id']
                     );
-                    $s_result = pg_query_params($db_lnk, 'SELECT * FROM card_voters_listing WHERE id = $1', $qry_val_arr);
-                    $user = pg_fetch_assoc($s_result);
+                    $s_result = pdoQueryStm($db_lnk, 'SELECT * FROM card_voters_listing WHERE id = ?', $qry_val_arr);
+                    $user = $s_result->fetch(PDO::FETCH_ASSOC);
                     $response['card_voters'] = $user;
                 }
             }
@@ -3601,7 +3606,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $r_post['board_id'],
                     $r_post['mimetype']
                 );
-                $s_result = pg_query_params($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, list_id, board_id, mimetype) VALUES (now(), now(), $1, $2, $3, $4, $5, $6) RETURNING *', $qry_val_arr);
+                //TODO: VERITFY RETURN
+                $s_result = pdoQueryStm($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, list_id, board_id, mimetype) VALUES (now(), now(), ?, ?, ?, ?, ?, ?) RETURNING *', $qry_val_arr);
                 $response['card_attachments'][] = pg_fetch_assoc($s_result);
             }
             foreach ($thumbsizes['CardAttachment'] as $key => $value) {
@@ -3636,8 +3642,9 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                             $r_post['board_id'],
                             $r_post[$i]['mimetype']
                         );
-                        $s_result = pg_query_params($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, list_id, board_id, mimetype) VALUES (now(), now(), $1, $2, $3, $4, $5, $6) RETURNING *', $qry_val_arr);
-                        $response['card_attachments'][] = pg_fetch_assoc($s_result);
+                        $s_result = pdoQueryStm($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, list_id, board_id, mimetype) VALUES (now(), now(), ?, ?, ?, ?, ?, ?)', $qry_val_arr);
+                        $qry_val_arr['id'] = $db_lnk->lastInsertId();
+                        $response['card_attachments'][] = $qry_val_arr;
                         $foreign_ids['board_id'] = $r_resource_vars['boards'];
                         $foreign_ids['list_id'] = $r_resource_vars['lists'];
                         $foreign_ids['card_id'] = $r_resource_vars['cards'];
@@ -3667,7 +3674,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         'NULL',
                         $r_post['link']
                     );
-                    $s_result = pg_query_params($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, list_id, board_id, mimetype, link) VALUES (now(), now(), $1, $2, $3, $4, $5, $6, $7) RETURNING *', $qry_val_arr);
+                    $s_result = pg_query_params($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, list_id, board_id, mimetype, link) VALUES (now(), now(), ?, ?, ?, ?, ?, ?, ?) RETURNING *', $qry_val_arr);
                     $response['card_attachments'][] = pg_fetch_assoc($s_result);
                     $foreign_ids['board_id'] = $r_resource_vars['boards'];
                     $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -3728,7 +3735,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
         $qry_val_arr = array(
             $r_resource_vars['cards']
         );
-        $delete_labels = pg_query_params($db_lnk, 'DELETE FROM ' . $table_name . ' WHERE card_id = $1 RETURNING label_id', $qry_val_arr);
+        $delete_labels = pg_query_params($db_lnk, 'DELETE FROM ' . $table_name . ' WHERE card_id = ? RETURNING label_id', $qry_val_arr);
         $delete_label = pg_fetch_assoc($delete_labels);
         $delete_labels_count = pg_affected_rows($delete_labels);
         if (!empty($r_post['name'])) {
@@ -3738,13 +3745,13 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $label_name
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT id FROM labels WHERE name = $1', $qry_val_arr);
-                $label = pg_fetch_assoc($s_result);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT id FROM labels WHERE name = ?', $qry_val_arr);
+                $label = $s_result->fetch(PDO::FETCH_ASSOC);
                 if (empty($label)) {
                     $qry_val_arr = array(
                         $label_name
                     );
-                    $s_result = pg_query_params($db_lnk, 'INSERT INTO labels (created, modified, name) VALUES (now(), now(), $1) RETURNING id', $qry_val_arr);
+                    $s_result = pg_query_params($db_lnk, 'INSERT INTO labels (created, modified, name) VALUES (now(), now(), ?) RETURNING id', $qry_val_arr);
                     $label = pg_fetch_assoc($s_result);
                 }
                 $r_post['label_id'] = $label['id'];
@@ -3754,13 +3761,13 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $r_post['board_id'],
                     $r_post['list_id']
                 );
-                pg_query_params($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, card_id, label_id, board_id, list_id) VALUES (now(), now(), $1, $2, $3, $4) RETURNING *', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, card_id, label_id, board_id, list_id) VALUES (now(), now(), ?, ?, ?, ?) RETURNING *', $qry_val_arr);
             }
             $qry_val_arr = array(
                 $r_post['card_id']
             );
-            $s_result = pg_query_params($db_lnk, 'SELECT * FROM cards_labels_listing WHERE card_id = $1', $qry_val_arr);
-            $cards_labels = pg_fetch_all($s_result);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT * FROM cards_labels_listing WHERE card_id = ?', $qry_val_arr);
+            $cards_labels = $s_result->fetch(PDO::FETCH_BOTH);
             $response['cards_labels'] = $cards_labels;
             $comment = '##USER_NAME## added label(s) to this card ##CARD_LINK## - ##LABEL_NAME##';
         } else {
@@ -3801,13 +3808,13 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $checklist_id,
                         $r_post['card_id']
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO checklist_items (created, modified, user_id, card_id, checklist_id, name, is_completed, position) SELECT created, modified, $1, $4, $2, name, false, position FROM checklist_items WHERE checklist_id = $3', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO checklist_items (created, modified, user_id, card_id, checklist_id, name, is_completed, position) SELECT created, modified, ?, ?, ?, name, false, position FROM checklist_items WHERE checklist_id = ?', $qry_val_arr);
                 }
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $result = pg_query_params($db_lnk, 'SELECT * FROM checklists_listing WHERE id = $1', $qry_val_arr);
-                $response['checklist'] = pg_fetch_assoc($result);
+                $result = pdoQueryStm($db_lnk, 'SELECT * FROM checklists_listing WHERE id = ?', $qry_val_arr);
+                $response['checklist'] = $result->fetch(PDO::FETCH_ASSOC);
                 $response['checklist']['checklists_items'] = json_decode($response['checklist']['checklists_items'], true);
                 $foreign_ids['board_id'] = $r_resource_vars['boards'];
                 $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -3865,16 +3872,16 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
         $qry_val_arr = array(
             $r_resource_vars['items']
         );
-        $result = pg_query_params($db_lnk, 'SELECT name FROM checklist_items WHERE id = $1', $qry_val_arr);
-        $row = pg_fetch_assoc($result);
+        $result = pdoQueryStm($db_lnk, 'SELECT name FROM checklist_items WHERE id = ?', $qry_val_arr);
+        $row = $result->fetch(PDO::FETCH_ASSOC);
         $r_post['board_id'] = $r_resource_vars['boards'];
         $r_post['list_id'] = $r_resource_vars['lists'];
         $r_post['name'] = $row['name'];
         $qry_val_arr = array(
             $r_post['list_id']
         );
-        $sresult = pg_query_params($db_lnk, 'SELECT max(position) as position FROM cards WHERE list_id = $1', $qry_val_arr);
-        $srow = pg_fetch_assoc($sresult);
+        $sresult = pdoQueryStm($db_lnk, 'SELECT max(position) as position FROM cards WHERE list_id = ?', $qry_val_arr);
+        $srow = $sresult->fetch(PDO::FETCH_ASSOC);
         $r_post['position'] = $srow['position'];
         $r_post['user_id'] = $authUser['id'];
         $sql = true;
@@ -3891,8 +3898,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['list_id']
                 );
-                $s_result = pg_query_params($db_lnk, 'SELECT name FROM lists WHERE id = $1', $qry_val_arr);
-                $list = pg_fetch_assoc($s_result);
+                $s_result = pdoQueryStm($db_lnk, 'SELECT name FROM lists WHERE id = ?', $qry_val_arr);
+                $list = $s_result->fetch(PDO::FETCH_ASSOC);
                 $foreign_ids['board_id'] = $r_post['board_id'];
                 $foreign_ids['card_id'] = $response['id'];
                 $foreign_ids['list_id'] = $r_post['list_id'];
@@ -3900,9 +3907,9 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $response['activity'] = insertActivity($authUser['id'], $comment, 'add_card', $foreign_ids, '', $r_post['list_id']);
                 if (!empty($r_post['members'])) {
                     foreach ($r_post['members'] as $member) {
-                        $s_usql = 'INSERT INTO cards_users (created, modified, card_id, user_id) VALUES(now(), now(), ' . $response['id'] . ', ' . $member . ') RETURNING id';
-                        $s_result = pg_query_params($db_lnk, $s_usql, array());
-                        $card_user = pg_fetch_assoc($s_result);
+                        $s_usql = 'INSERT INTO cards_users (created, modified, card_id, user_id) VALUES(now(), now(), ' . $response['id'] . ', ' . $member . ')';
+                        pdoQueryStm($db_lnk, $s_usql, array());
+                        $card_user = ['id' => $db_lnk->lastInsertId()];
                         $qry_val_arr = array(
                             $member
                         );
@@ -3914,8 +3921,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $cards_users = pg_query_params($db_lnk, 'SELECT * FROM cards_users_listing WHERE card_id = $1', $qry_val_arr);
-                while ($cards_user = pg_fetch_assoc($cards_users)) {
+                $cards_users = pdoQueryStm($db_lnk, 'SELECT * FROM cards_users_listing WHERE card_id = ?', $qry_val_arr);
+                while ($cards_user = $cards_users->fetch(PDO::FETCH_ASSOC)) {
                     $response['cards_users'][] = $cards_user;
                 }
                 if (!empty($r_post['labels'])) {
@@ -3927,14 +3934,14 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $qry_val_arr = array(
                             $label_name
                         );
-                        $s_result = pg_query_params($db_lnk, 'SELECT id FROM labels WHERE name = $1', $qry_val_arr);
-                        $label = pg_fetch_assoc($s_result);
+                        $s_result = pdoQueryStm($db_lnk, 'SELECT id FROM labels WHERE name = ?', $qry_val_arr);
+                        $label = $s_result->fetch(PDO::FETCH_ASSOC);
                         if (empty($label)) {
                             $qry_val_arr = array(
                                 $label_name
                             );
-                            $s_result = pg_query_params($db_lnk, $s_sql = 'INSERT INTO labels (created, modified, name) VALUES (now(), now(), $1) RETURNING id', $qry_val_arr);
-                            $label = pg_fetch_assoc($s_result);
+                            pdoQueryStm($db_lnk, $s_sql = 'INSERT INTO labels (created, modified, name) VALUES (now(), now(), ?)', $qry_val_arr);
+                            $label = ['id' => $db_lnk->lastInsertId()];
                         }
                         $r_post['label_id'] = $label['id'];
                         $r_post['card_id'] = $row['id'];
@@ -3946,7 +3953,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                             $r_post['board_id'],
                             $r_post['list_id']
                         );
-                        pg_query_params($db_lnk, 'INSERT INTO cards_labels (created, modified, card_id, label_id, board_id, list_id) VALUES (now(), now(), $1, $2, $3, $4) RETURNING *', $qry_val_arr);
+                        pdoQueryStm($db_lnk, 'INSERT INTO cards_labels (created, modified, card_id, label_id, board_id, list_id) VALUES (now(), now(), ?, ?, ?, ?) RETURNING *', $qry_val_arr);
                     }
                     $comment = '##USER_NAME## added label(s) to this card ##CARD_LINK## - ##LABEL_NAME##';
                     insertActivity($authUser['id'], $comment, 'add_card_label', $foreign_ids, null, $r_post['label_id']);
@@ -3954,8 +3961,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $cards_labels = pg_query_params($db_lnk, 'SELECT * FROM cards_labels_listing WHERE card_id = $1', $qry_val_arr);
-                while ($cards_label = pg_fetch_assoc($cards_labels)) {
+                $cards_labels = pdoQueryStm($db_lnk, 'SELECT * FROM cards_labels_listing WHERE card_id = ?', $qry_val_arr);
+                while ($cards_label = $cards_labels->fetch(PDO::FETCH_ASSOC)) {
                     $response['cards_labels'][] = $cards_label;
                 }
             }
@@ -3996,9 +4003,9 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $r_post['card_id'],
                         $r_post['user_id']
                     );
-                    $sel_query = 'SELECT cu.card_id, cu.user_id, users.username, c.board_id, c.list_id, b.name as board_name FROM cards_users cu LEFT JOIN cards c ON cu.card_id = c.id LEFT JOIN users ON cu.user_id = users.id LEFT JOIN boards b ON c.board_id = b.id WHERE cu.card_id = $1 AND cu.user_id = $2';
-                    $get_details = pg_query_params($db_lnk, $sel_query, $qry_val_arr);
-                    $sel_details = pg_fetch_assoc($get_details);
+                    $sel_query = 'SELECT cu.card_id, cu.user_id, users.username, c.board_id, c.list_id, b.name as board_name FROM cards_users cu LEFT JOIN cards c ON cu.card_id = c.id LEFT JOIN users ON cu.user_id = users.id LEFT JOIN boards b ON c.board_id = b.id WHERE cu.card_id = ? AND cu.user_id = ?';
+                    $get_details = pdoQueryStm($db_lnk, $sel_query, $qry_val_arr);
+                    $sel_details = $get_details->fetch(PDO::FETCH_ASSOC);
                     $foreign_ids['board_id'] = $sel_details['board_id'];
                     $foreign_ids['list_id'] = $sel_details['list_id'];
                     $foreign_ids['card_id'] = $r_post['card_id'];
@@ -4039,8 +4046,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
         $qry_val_arr = array(
             $copied_card_id
         );
-        $sresult = pg_query_params($db_lnk, 'SELECT * FROM cards WHERE id = $1', $qry_val_arr);
-        $srow = pg_fetch_assoc($sresult);
+        $sresult = pdoQueryStm($db_lnk, 'SELECT * FROM cards WHERE id = ?', $qry_val_arr);
+        $srow = $sresult->fetch(PDO::FETCH_ASSOC);
         unset($srow['id']);
         $card_name = $r_post['name'];
         $r_post = array_merge($srow, $r_post);
@@ -4049,10 +4056,10 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
             $r_post['list_id'],
             '0'
         );
-        $list_card_objs = pg_query_params($db_lnk, 'SELECT * FROM cards_listing WHERE list_id = $1 AND is_archived = $2 ORDER BY position ASC', $conditions);
+        $list_card_objs = pdoQueryStm($db_lnk, 'SELECT * FROM cards_listing WHERE list_id = ? AND is_archived = ? ORDER BY position ASC', $conditions);
         $list_cards = array();
         $h = 1;
-        while ($card = pg_fetch_assoc($list_card_objs)) {
+        while ($card = $list_card_objs->fetch(PDO::FETCH_ASSOC)) {
             $list_cards[$h] = $card;
             $h++;
         }
@@ -4083,14 +4090,14 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $r_post['board_id'],
                         $copied_card_id
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, mimetype, list_id, board_id) SELECT created, modified, $1, name, path, mimetype, $2, $3 FROM card_attachments WHERE card_id = $4 ORDER BY id', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO card_attachments (created, modified, card_id, name, path, mimetype, list_id, board_id) SELECT created, modified, ?, name, path, mimetype, ?, ? FROM card_attachments WHERE card_id = ? ORDER BY id', $qry_val_arr);
                 }
                 if ($is_keep_user) {
                     $qry_val_arr = array(
                         $response['id'],
                         $copied_card_id
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO cards_users (created, modified, card_id, user_id) SELECT created, modified, $1, user_id  FROM cards_users WHERE card_id = $2 ORDER BY id', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO cards_users (created, modified, card_id, user_id) SELECT created, modified, ?, user_id  FROM cards_users WHERE card_id = ? ORDER BY id', $qry_val_arr);
                 }
                 if ($is_keep_label) {
                     $qry_val_arr = array(
@@ -4099,7 +4106,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $r_post['board_id'],
                         $copied_card_id
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO cards_labels (created, modified, card_id, label_id, list_id, board_id) SELECT created, modified, $1, label_id, $2, $3 FROM cards_labels WHERE card_id = $4 ORDER BY id', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO cards_labels (created, modified, card_id, label_id, list_id, board_id) SELECT created, modified, ?, label_id, ?, ? FROM cards_labels WHERE card_id = ? ORDER BY id', $qry_val_arr);
                 }
                 if ($is_keep_activity) {
                     $qry_val_arr = array(
@@ -4109,34 +4116,34 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $r_post['board_id'],
                         $copied_card_id
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO activities (created, modified, card_id, user_id, list_id, board_id, foreign_id, type, comment, revisions, root, freshness_ts, depth, path, materialized_path) SELECT created, modified, $1, $2, $3, $4, foreign_id, type, comment, revisions, root, freshness_ts, depth, path, materialized_path FROM activities WHERE type = \'add_comment\' AND card_id = $5 ORDER BY id', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO activities (created, modified, card_id, user_id, list_id, board_id, foreign_id, type, comment, revisions, root, freshness_ts, depth, path, materialized_path) SELECT created, modified, ?, ?, ?, ?, foreign_id, type, comment, revisions, root, freshness_ts, depth, path, materialized_path FROM activities WHERE type = \'add_comment\' AND card_id = ? ORDER BY id', $qry_val_arr);
                 }
                 if ($is_keep_checklist) {
                     $qry_val_arr = array(
                         $response['id'],
                         $copied_card_id
                     );
-                    pg_query_params($db_lnk, 'INSERT INTO checklists (created, modified, user_id, card_id, name, checklist_item_count, checklist_item_completed_count, position) SELECT created, modified, user_id, $1, name, checklist_item_count, checklist_item_completed_count, position FROM checklists WHERE card_id = $2 ORDER BY id', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'INSERT INTO checklists (created, modified, user_id, card_id, name, checklist_item_count, checklist_item_completed_count, position) SELECT created, modified, user_id, ?, name, checklist_item_count, checklist_item_completed_count, position FROM checklists WHERE card_id = ? ORDER BY id', $qry_val_arr);
                     $qry_val_arr = array(
                         $response['id']
                     );
-                    $checklists = pg_query_params($db_lnk, 'SELECT id FROM checklists WHERE card_id = $1', $qry_val_arr);
+                    $checklists = pdoQueryStm($db_lnk, 'SELECT id FROM checklists WHERE card_id = ?', $qry_val_arr);
                     $qry_val_arr = array(
                         $copied_card_id
                     );
-                    $prev_checklists = pg_query_params($db_lnk, 'SELECT id FROM checklists WHERE card_id = $1', $qry_val_arr);
+                    $prev_checklists = pdoQueryStm($db_lnk, 'SELECT id FROM checklists WHERE card_id = ?', $qry_val_arr);
                     $prev_checklist_ids = array();
-                    while ($prev_checklist_id = pg_fetch_assoc($prev_checklists)) {
+                    while ($prev_checklist_id = $prev_checklists->fetch(PDO::FETCH_ASSOC)) {
                         $prev_checklist_ids[] = $prev_checklist_id['id'];
                     }
                     $i = 0;
-                    while ($checklist_id = pg_fetch_assoc($checklists)) {
+                    while ($checklist_id = $checklists->fetch(PDO::FETCH_ASSOC)) {
                         $qry_val_arr = array(
                             $response['id'],
                             $checklist_id['id'],
                             $prev_checklist_ids[$i]
                         );
-                        pg_query_params($db_lnk, 'INSERT INTO checklist_items (created, modified, user_id, card_id, name, checklist_id, is_completed, position) SELECT created, modified, user_id, $1, name , $2, is_completed, position FROM checklist_items WHERE checklist_id = $3 ORDER BY id', $qry_val_arr);
+                        pdoQueryStm($db_lnk, 'INSERT INTO checklist_items (created, modified, user_id, card_id, name, checklist_id, is_completed, position) SELECT created, modified, user_id, ?, name , ?, is_completed, position FROM checklist_items WHERE checklist_id = ? ORDER BY id', $qry_val_arr);
                         $i++;
                     }
                 }
@@ -4174,8 +4181,8 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $response['id']
                 );
-                $attachments = pg_query_params($db_lnk, 'SELECT * FROM card_attachments WHERE card_id = $1', $qry_val_arr);
-                while ($attachment = pg_fetch_assoc($attachments)) {
+                $attachments = pdoQueryStm($db_lnk, 'SELECT * FROM card_attachments WHERE card_id = ?', $qry_val_arr);
+                while ($attachment = $attachments->fetch(PDO::FETCH_ASSOC)) {
                     $response['cards']['attachments'][] = $attachment;
                 }
             }
@@ -4211,22 +4218,22 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $qry_val_arr = array(
                     $r_post['organization_id']
                 );
-                $boards = pg_query_params($db_lnk, 'SELECT * FROM boards WHERE organization_id = $1', $qry_val_arr);
-                while ($board = pg_fetch_assoc($boards)) {
+                $boards = pdoQueryStm($db_lnk, 'SELECT * FROM boards WHERE organization_id = ?', $qry_val_arr);
+                while ($board = $boards->fetch(PDO::FETCH_ASSOC)) {
                     if (!empty($board)) {
                         $qry_val_arr = array(
                             $board['id'],
                             $r_post['user_id']
                         );
-                        $boards_users = pg_query_params($db_lnk, 'SELECT * FROM boards_users WHERE board_id = $1 AND user_id = $2', $qry_val_arr);
-                        $boards_users = pg_fetch_assoc($boards_users);
+                        $boards_users = pdoQueryStm($db_lnk, 'SELECT * FROM boards_users WHERE board_id = ? AND user_id = ?', $qry_val_arr);
+                        $boards_users = $boards_users->fetch(PDO::FETCH_ASSOC);
                         if (empty($boards_users)) {
                             $qry_val_arr = array(
                                 $board['id'],
                                 $r_post['user_id'],
                                 2
                             );
-                            pg_query_params($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), $1, $2, $3)', $qry_val_arr);
+                            pdoQueryStm($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), ?, ?, ?)', $qry_val_arr);
                         }
                     }
                 }
@@ -4251,7 +4258,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                     $r_post['user_id'],
                     1
                 );
-                pg_query_params($db_lnk, 'INSERT INTO organizations_users (created, modified, organization_id , user_id, organization_user_role_id) VALUES (now(), now(), $1, $2, $3)', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'INSERT INTO organizations_users (created, modified, organization_id , user_id, organization_user_role_id) VALUES (now(), now(), ?, ?, ?)', $qry_val_arr);
                 $foreign_id['organization_id'] = $row['id'];
                 $comment = '##USER_NAME## created organization "##ORGANIZATION_LINK##"';
                 $response['activity'] = insertActivity($authUser['id'], $comment, 'add_organization', $foreign_id);
@@ -4303,7 +4310,7 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                         $logo_url,
                         $r_resource_vars['organizations']
                     );
-                    pg_query_params($db_lnk, 'UPDATE organizations SET logo_url = $1 WHERE id = $2', $qry_val_arr);
+                    pdoQueryStm($db_lnk, 'UPDATE organizations SET logo_url = ? WHERE id = ?', $qry_val_arr);
                     $response['logo_url'] = $logo_url;
                     $foreign_ids['organization_id'] = $r_resource_vars['organizations'];
                     $comment = ((!empty($authUser['full_name'])) ? $authUser['full_name'] : $authUser['username']) . ' added attachment to this organization ##ORGANIZATION_LINK##';
@@ -4342,13 +4349,13 @@ function r_post($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_post)
                 $r_post['acl_link_id'],
                 $r_post['role_id']
             );
-            pg_query_params($db_lnk, 'DELETE FROM ' . $table_name . ' WHERE ' . $colmns[$table_name][0] . ' = $1 AND ' . $colmns[$table_name][1] . ' = $2', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'DELETE FROM ' . $table_name . ' WHERE ' . $colmns[$table_name][0] . ' = ? AND ' . $colmns[$table_name][1] . ' = ?', $qry_val_arr);
         } else {
             $qry_val_arr = array(
                 $r_post['acl_link_id'],
                 $r_post['role_id']
             );
-            pg_query_params($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, ' . $colmns[$table_name][0] . ', ' . $colmns[$table_name][1] . ') VALUES(now(), now(), $1, $2)', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'INSERT INTO ' . $table_name . ' (created, modified, ' . $colmns[$table_name][0] . ', ' . $colmns[$table_name][1] . ') VALUES(now(), now(), ?, ?)', $qry_val_arr);
         }
         echo json_encode($response);
         break;
@@ -4546,7 +4553,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
                 'true',
                 $r_put['id']
             );
-            $sql = pg_query_params($db_lnk, "UPDATE users SET is_email_confirmed = $1, is_active = $2 WHERE id = $3", $qry_val_arr);
+            $sql = pdoQueryStm($db_lnk, "UPDATE users SET is_email_confirmed = ?, is_active = ? WHERE id = ?", $qry_val_arr);
             if ($sql) {
                 $emailFindReplace = array(
                     '##NAME##' => $user['full_name'],
@@ -4575,8 +4582,8 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
                 $r_resource_vars['users']
             );
             $activity_type = 'change_user_permission';
-            $s_result = pg_query_params($db_lnk, 'SELECT username FROM users WHERE id = $1', $qry_val_arr);
-            $username = pg_fetch_assoc($s_result);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT username FROM users WHERE id = ?', $qry_val_arr);
+            $username = $s_result->fetch(PDO::FETCH_ASSOC);
             $comment = '##USER_NAME## changed the user permission for "' . $username['username'] . '"';
             $foreign_id['user_id'] = $r_resource_vars['users'];
         } else if (isset($r_put['is_productivity_beats'])) {
@@ -4587,8 +4594,8 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $qry_val_arr = array(
                 $r_resource_vars['users']
             );
-            $s_result = pg_query_params($db_lnk, 'SELECT username FROM users WHERE id = $1', $qry_val_arr);
-            $username = pg_fetch_assoc($s_result);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT username FROM users WHERE id = ?', $qry_val_arr);
+            $username = $s_result->fetch(PDO::FETCH_ASSOC);
             $comment = '##USER_NAME## ' . $is_active . ' ' . $username['username'] . '';
             $foreign_id['user_id'] = $r_resource_vars['users'];
         } else if (isset($r_put['last_activity_id']) || isset($r_put['language'])) {
@@ -4684,22 +4691,22 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $qry_val_arr = array(
                 $r_put['organization_id']
             );
-            $organizations_users = pg_query_params($db_lnk, 'SELECT user_id FROM organizations_users WHERE organization_id = $1', $qry_val_arr);
-            while ($organizations_user = pg_fetch_assoc($organizations_users)) {
+            $organizations_users = pdoQueryStm($db_lnk, 'SELECT user_id FROM organizations_users WHERE organization_id = ?', $qry_val_arr);
+            while ($organizations_user = $organizations_users->fetch(PDO::FETCH_ASSOC)) {
                 if (!empty($organizations_user)) {
                     $qry_val_arr = array(
                         $r_resource_vars['boards'],
                         $organizations_user['user_id']
                     );
-                    $boards_users = pg_query_params($db_lnk, 'SELECT * FROM boards_users WHERE board_id = $1 AND user_id = $2', $qry_val_arr);
-                    $boards_users = pg_fetch_assoc($boards_users);
+                    $boards_users = pdoQueryStm($db_lnk, 'SELECT * FROM boards_users WHERE board_id = ? AND user_id = ?', $qry_val_arr);
+                    $boards_users = $boards_users->fetch(PDO::FETCH_ASSOC);
                     if (empty($boards_users)) {
                         $qry_val_arr = array(
                             $r_resource_vars['boards'],
                             $organizations_user['user_id'],
                             2
                         );
-                        pg_query_params($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), $1, $2, $3)', $qry_val_arr);
+                        pdoQueryStm($db_lnk, 'INSERT INTO boards_users (created, modified, board_id , user_id, board_user_role_id) VALUES (now(), now(), ?, ?, ?)', $qry_val_arr);
                     }
                 }
             }
@@ -4716,9 +4723,9 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $qry_val_arr = array(
                 $r_resource_vars['lists']
             );
-            $s_sql = 'SELECT name, board_id, position, color FROM ' . $table_name . ' WHERE id = $1';
-            $s_result = pg_query_params($db_lnk, $s_sql, $qry_val_arr);
-            $previous_value = pg_fetch_assoc($s_result);
+            $s_sql = 'SELECT name, board_id, position, color FROM ' . $table_name . ' WHERE id = ?';
+            $s_result = pdoQueryStm($db_lnk, $s_sql, $qry_val_arr);
+            $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
         }
         $foreign_ids['board_id'] = $r_resource_vars['boards'];
         $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -4727,12 +4734,12 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
                 $r_put['board_id'],
                 $r_resource_vars['lists']
             );
-            pg_query_params($db_lnk, 'UPDATE cards SET board_id = $1 WHERE list_id = $2', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE cards SET board_id = ? WHERE list_id = ?', $qry_val_arr);
             $qry_val_arr = array(
                 $r_put['board_id'],
                 $r_resource_vars['lists']
             );
-            pg_query_params($db_lnk, 'UPDATE card_attachments SET board_id = $1 WHERE list_id = $2', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE card_attachments SET board_id = ? WHERE list_id = ?', $qry_val_arr);
         }
         if (isset($r_put['position'])) {
             $comment = '##USER_NAME## changed list ' . $previous_value['name'] . ' position.';
@@ -4785,12 +4792,12 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
                 $r_put['list_id'],
                 $foreign_ids['list_id']
             );
-            pg_query_params($db_lnk, 'UPDATE card_attachments SET list_id = $1 WHERE list_id = $2', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE card_attachments SET list_id = ? WHERE list_id = ?', $qry_val_arr);
             $qry_val_arr = array(
                 $r_put['list_id'],
                 $foreign_ids['list_id']
             );
-            pg_query_params($db_lnk, 'UPDATE cards_labels SET list_id = $1 WHERE list_id = $2', $qry_val_arr);
+            pdoQueryStm($db_lnk, 'UPDATE cards_labels SET list_id = ? WHERE list_id = ?', $qry_val_arr);
             $qry_val_array = array(
                 $r_put['list_id']
             );
@@ -4824,8 +4831,8 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
         $qry_val_arr = array(
             $r_resource_vars['cards']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT name, board_id, list_id, position, description, custom_fields, due_date, color FROM ' . $table_name . ' WHERE id = $1', $qry_val_arr);
-        $previous_value = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT name, board_id, list_id, position, description, custom_fields, due_date, color FROM ' . $table_name . ' WHERE id = ?', $qry_val_arr);
+        $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
         if (!empty($r_put['custom_fields'])) {
             if ($previous_value && !empty($previous_value['custom_fields'])) {
                 $previous_custom_fields = json_decode($previous_value['custom_fields'], true);
@@ -4846,7 +4853,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
                     $new_board_id,
                     $foreign_ids['card_id']
                 );
-                pg_query_params($db_lnk, 'UPDATE card_attachments SET list_id = $1, board_id = $2 WHERE card_id = $3', $qry_val_arr);
+                pdoQueryStm($db_lnk, 'UPDATE card_attachments SET list_id = ?, board_id = ? WHERE card_id = ?', $qry_val_arr);
             }
             $qry_val_arr = array(
                 $current_list_id
@@ -4937,13 +4944,13 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $qry_val_arr = array(
                 $r_put['list_id']
             );
-            $s_result = pg_query_params($db_lnk, 'SELECT name FROM lists WHERE id = $1', $qry_val_arr);
-            $list_value = pg_fetch_assoc($s_result);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT name FROM lists WHERE id = ?', $qry_val_arr);
+            $list_value = $s_result->fetch(PDO::FETCH_ASSOC);
             $qry_val_arr = array(
                 $previous_value['list_id']
             );
-            $s_result = pg_query_params($db_lnk, 'SELECT name FROM lists WHERE id = $1', $qry_val_arr);
-            $previous_list_value = pg_fetch_assoc($s_result);
+            $s_result = pdoQueryStm($db_lnk, 'SELECT name FROM lists WHERE id = ?', $qry_val_arr);
+            $previous_list_value = $s_result->fetch(PDO::FETCH_ASSOC);
             $comment = '##USER_NAME## moved this card ##CARD_LINK## from ' . $previous_list_value['name'] . ' list to ' . $list_value['name'] . '.';
         }
         if (empty($previous_value['color']) && isset($r_put['color'])) {
@@ -4986,7 +4993,7 @@ function r_put($r_resource_cmd, $r_resource_vars, $r_resource_filters, $r_put)
             $foreign_ids['board_id'],
             $foreign_ids['list_id']
         );
-        pg_query_params($db_lnk, 'UPDATE card_attachments SET is_cover = false WHERE card_id = $1 AND board_id = $2 AND list_id = $3', $data);
+        pdoQueryStm($db_lnk, 'UPDATE card_attachments SET is_cover = false WHERE card_id = ? AND board_id = ? AND list_id = ?', $data);
         $comment = '##USER_NAME## updated card attachments to this card ##CARD_LINK##';
         $activity_type = 'update_card_attachment';
         $response = update_query($table_name, $id, $r_resource_cmd, $r_put, $comment, $activity_type, $foreign_ids);
@@ -5275,15 +5282,15 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $qry_val_arr = array(
             $r_resource_vars['users']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT username, role_id FROM users WHERE id = $1', $qry_val_arr);
-        $username = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT username, role_id FROM users WHERE id = ?', $qry_val_arr);
+        $username = $s_result->fetch(PDO::FETCH_ASSOC);
         if ($username['role_id'] == 1) {
             $response['error'] = 'Admin users can\'t be deleted';
         } else {
             $foreign_id['user_id'] = $r_resource_vars['users'];
             $comment = '##USER_NAME## deleted "' . $username['username'] . '"';
             $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_user', $foreign_id);
-            $sql = 'DELETE FROM users WHERE id= $1';
+            $sql = 'DELETE FROM users WHERE id= ?';
             array_push($pg_params, $r_resource_vars['users']);
             if (is_plugin_enabled('r_chat') && $jabberHost) {
                 xmppDeleteSingleUser($username);
@@ -5295,45 +5302,45 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $qry_val_arr = array(
             $r_resource_vars['organizations_users']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT username, organization_id, name, full_name FROM organizations_users_listing WHERE id = $1', $qry_val_arr);
-        $previous_value = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT username, organization_id, name, full_name FROM organizations_users_listing WHERE id = ?', $qry_val_arr);
+        $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
         $foreign_ids['organization_id'] = $previous_value['organization_id'];
         $comment = '##USER_NAME## removed member "' . $previous_value['full_name'] . '" from organization';
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_organization_user', $foreign_ids, '', $r_resource_vars['organizations_users']);
-        $sql = 'DELETE FROM organizations_users WHERE id= $1';
+        $sql = 'DELETE FROM organizations_users WHERE id= ?';
         array_push($pg_params, $r_resource_vars['organizations_users']);
         $qry_val_arr = array(
             $r_resource_vars['organizations_users']
         );
-        $organizations_users_result = pg_query_params($db_lnk, 'SELECT user_id FROM organizations_users_listing WHERE id = $1', $qry_val_arr);
-        $organizations_users = pg_fetch_assoc($organizations_users_result);
+        $organizations_users_result = pdoQueryStm($db_lnk, 'SELECT user_id FROM organizations_users_listing WHERE id = ?', $qry_val_arr);
+        $organizations_users = $organizations_users_result->fetch(PDO::FETCH_ASSOC);
         $conditions = array(
             $previous_value['organization_id'],
             $organizations_users['user_id']
         );
-        pg_query_params($db_lnk, 'DELETE FROM boards_users WHERE board_id IN (SELECT id FROM boards WHERE organization_id = $1) AND user_id = $2', $conditions);
+        pdoQueryStm($db_lnk, 'DELETE FROM boards_users WHERE board_id IN (SELECT id FROM boards WHERE organization_id = ?) AND user_id = ?', $conditions);
         break;
 
     case '/boards/?/boards_users/?': // delete board user
         $qry_val_arr = array(
             $r_resource_vars['boards_users']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT username, full_name, board_id, user_id, board_name FROM boards_users_listing WHERE id = $1', $qry_val_arr);
-        $previous_value = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT username, full_name, board_id, user_id, board_name FROM boards_users_listing WHERE id = ?', $qry_val_arr);
+        $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
         $foreign_ids['board_id'] = $previous_value['board_id'];
         $comment = '##USER_NAME## removed member "' . $previous_value['username'] . '" from board';
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_board_user', $foreign_ids, '', $r_resource_vars['boards_users']);
-        $sql = 'DELETE FROM boards_users WHERE id= $1';
+        $sql = 'DELETE FROM boards_users WHERE id= ?';
         $conditions = array(
             $previous_value['board_id']
         );
-        $cards = pg_query_params($db_lnk, 'SELECT id FROM cards WHERE board_id = $1', $conditions);
-        while ($row = pg_fetch_assoc($cards)) {
+        $cards = pdoQueryStm($db_lnk, 'SELECT id FROM cards WHERE board_id = ?', $conditions);
+        while ($row = $cards->fetch(PDO::FETCH_ASSOC)) {
             $conditions = array(
                 $row['id'],
                 $previous_value['user_id']
             );
-            pg_query_params($db_lnk, 'DELETE FROM cards_users WHERE card_id = $1 AND user_id = $2', $conditions);
+            pdoQueryStm($db_lnk, 'DELETE FROM cards_users WHERE card_id = ? AND user_id = ?', $conditions);
         }
         array_push($pg_params, $r_resource_vars['boards_users']);
         if (is_plugin_enabled('r_chat') && $jabberHost) {
@@ -5345,23 +5352,23 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $qry_val_arr = array(
             $r_resource_vars['lists']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT name, board_id, position FROM lists WHERE id = $1', $qry_val_arr);
-        $previous_value = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT name, board_id, position FROM lists WHERE id = ?', $qry_val_arr);
+        $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
         $foreign_id['board_id'] = $r_resource_vars['boards'];
         $foreign_id['list_id'] = $r_resource_vars['lists'];
         $comment = '##USER_NAME## deleted "' . $previous_value['name'] . '"';
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_list', $foreign_id);
-        $sql = 'DELETE FROM lists WHERE id= $1';
+        $sql = 'DELETE FROM lists WHERE id= ?';
         array_push($pg_params, $r_resource_vars['lists']);
         break;
 
     case '/boards/?/lists': // delete Archived lists
-        $sql = 'DELETE FROM lists WHERE board_id = $1 AND is_archived = true';
+        $sql = 'DELETE FROM lists WHERE board_id = ? AND is_archived = true';
         array_push($pg_params, $r_resource_vars['boards']);
         break;
 
     case '/boards/?/cards': // delete Archived cards
-        $sql = 'DELETE FROM cards WHERE board_id = $1 AND is_archived = true';
+        $sql = 'DELETE FROM cards WHERE board_id = ? AND is_archived = true';
         array_push($pg_params, $r_resource_vars['boards']);
         break;
 
@@ -5374,23 +5381,23 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             2,
             $foreign_id['organization_id']
         );
-        pg_query_params($db_lnk, 'UPDATE boards SET organization_id = $1, board_visibility = $2 WHERE organization_id = $3', $data);
+        pdoQueryStm($db_lnk, 'UPDATE boards SET organization_id = ?, board_visibility = ? WHERE organization_id = ?', $data);
         $conditions = array(
             $foreign_id['organization_id']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT user_id FROM organizations WHERE id = $1', $conditions);
-        $organization = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT user_id FROM organizations WHERE id = ?', $conditions);
+        $organization = $s_result->fetch(PDO::FETCH_ASSOC);
         $conditions = array(
             $organization['user_id'],
             $foreign_id['organization_id']
         );
-        pg_query_params($db_lnk, 'DELETE FROM organizations_users WHERE user_id = $1 AND organization_id = $2', $conditions);
-        $sql = 'DELETE FROM organizations WHERE id= $1';
+        pdoQueryStm($db_lnk, 'DELETE FROM organizations_users WHERE user_id = ? AND organization_id = ?', $conditions);
+        $sql = 'DELETE FROM organizations WHERE id= ?';
         array_push($pg_params, $r_resource_vars['organizations']);
         break;
 
     case '/boards/?/labels/?': // delete Labels in Filter
-        $sql = 'DELETE FROM cards_labels WHERE board_id = $1 AND label_id = $2';
+        $sql = 'DELETE FROM cards_labels WHERE board_id = ? AND label_id = ?';
         array_push($pg_params, $r_resource_vars['boards'], $r_resource_vars['labels']);
         break;
 
@@ -5398,19 +5405,19 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $qry_val_arr = array(
             $r_resource_vars['cards']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT name, board_id, position FROM cards WHERE id = $1', $qry_val_arr);
-        $previous_value = pg_fetch_assoc($s_result);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT name, board_id, position FROM cards WHERE id = ?', $qry_val_arr);
+        $previous_value = $s_result->fetch(PDO::FETCH_ASSOC);
         $foreign_id['board_id'] = $r_resource_vars['boards'];
         $foreign_id['list_id'] = $r_resource_vars['lists'];
         $foreign_id['card_id'] = $r_resource_vars['cards'];
         $comment = '##USER_NAME## deleted card ' . $previous_value['name'];
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_card', $foreign_id);
-        $sql = 'DELETE FROM cards WHERE id = $1';
+        $sql = 'DELETE FROM cards WHERE id = ?';
         array_push($pg_params, $r_resource_vars['cards']);
         break;
 
     case '/boards/?/lists/?/cards/?/card_voters/?': // delete card voters
-        $sql = 'DELETE FROM card_voters WHERE id = $1';
+        $sql = 'DELETE FROM card_voters WHERE id = ?';
         array_push($pg_params, $r_resource_vars['card_voters']);
         $foreign_ids['board_id'] = $r_resource_vars['boards'];
         $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -5437,7 +5444,7 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $revisions_del['new_value'] = '';
             $revisions_del = serialize($revisions_del);
         }
-        $sql = 'DELETE FROM activities WHERE id = $1';
+        $sql = 'DELETE FROM activities WHERE id = ?';
         array_push($pg_params, $r_resource_vars['comments']);
         $foreign_ids['board_id'] = $r_resource_vars['boards'];
         $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -5465,12 +5472,12 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         if (isset($diff)) {
             $response['activity']['difference'] = $diff;
         }
-        $result = pg_query_params($db_lnk, $sql, $pg_params);
+        $result = pdoQueryStm($db_lnk, $sql, $pg_params);
         if ($result) {
             $conditions = array(
                 $r_resource_vars['comments']
             );
-            pg_query_params($db_lnk, "DELETE FROM activities WHERE path like '%P" . $r_resource_vars['comments'] . "%'", array());
+            pdoQueryStm($db_lnk, "DELETE FROM activities WHERE path like '%P" . $r_resource_vars['comments'] . "%'", array());
         }
         $conditions = array(
             $r_resource_vars['cards']
@@ -5481,7 +5488,7 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
             $activity_count,
             $r_resource_vars['cards']
         );
-        pg_query_params($db_lnk, 'UPDATE cards SET comment_count = $1 WHERE id = $2', $qry_val_arr);
+        pdoQueryStm($db_lnk, 'UPDATE cards SET comment_count = ? WHERE id = ?', $qry_val_arr);
         $response['error'] = array(
             'code' => (!$result) ? 1 : 0
         );
@@ -5489,7 +5496,7 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         break;
 
     case '/boards/?/lists/?/cards/?/attachments/?': //delete card attachment
-        $sql = 'DELETE FROM card_attachments WHERE id = $1';
+        $sql = 'DELETE FROM card_attachments WHERE id = ?';
         array_push($pg_params, $r_resource_vars['attachments']);
         $foreign_ids['board_id'] = $r_resource_vars['boards'];
         $foreign_ids['list_id'] = $r_resource_vars['lists'];
@@ -5502,15 +5509,15 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $qry_val_arr = array(
             $r_resource_vars['checklists']
         );
-        $s_result = pg_query_params($db_lnk, 'SELECT name FROM checklists WHERE id = $1', $qry_val_arr);
-        $checklist = pg_fetch_assoc($s_result);
-        pg_query_params($db_lnk, 'DELETE FROM checklist_items WHERE checklist_id = $1', $qry_val_arr);
+        $s_result = pdoQueryStm($db_lnk, 'SELECT name FROM checklists WHERE id = ?', $qry_val_arr);
+        $checklist = $s_result->fetch(PDO::FETCH_ASSOC);
+        pdoQueryStm($db_lnk, 'DELETE FROM checklist_items WHERE checklist_id = ?', $qry_val_arr);
         $foreign_ids['board_id'] = $r_resource_vars['boards'];
         $foreign_ids['list_id'] = $r_resource_vars['lists'];
         $foreign_ids['card_id'] = $r_resource_vars['cards'];
         $comment = '##USER_NAME## deleted checklist ' . $checklist['name'] . ' from card ##CARD_LINK##';
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_checklist', $foreign_ids, null, $r_resource_vars['checklists']);
-        $sql = 'DELETE FROM checklists WHERE id = $1';
+        $sql = 'DELETE FROM checklists WHERE id = ?';
         array_push($pg_params, $r_resource_vars['checklists']);
         break;
 
@@ -5520,7 +5527,7 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $foreign_ids['card_id'] = $r_resource_vars['cards'];
         $comment = '##USER_NAME## deleted checklist ##CHECKLIST_NAME## item from card ##CARD_LINK##';
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_checklist_item', $foreign_ids, null, $r_resource_vars['items']);
-        $sql = 'DELETE FROM checklist_items WHERE id = $1';
+        $sql = 'DELETE FROM checklist_items WHERE id = ?';
         array_push($pg_params, $r_resource_vars['items']);
         break;
 
@@ -5530,12 +5537,12 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $foreign_ids['card_id'] = $r_resource_vars['cards'];
         $comment = '##USER_NAME## deleted member from card ##CARD_LINK##';
         $response['activity'] = insertActivity($authUser['id'], $comment, 'delete_card_users', $foreign_ids, null, $r_resource_vars['cards_users']);
-        $sql = 'DELETE FROM cards_users WHERE id = $1';
+        $sql = 'DELETE FROM cards_users WHERE id = ?';
         array_push($pg_params, $r_resource_vars['cards_users']);
         break;
 
     case '/oauth/clients/?':
-        $sql = 'DELETE FROM oauth_clients WHERE id= $1';
+        $sql = 'DELETE FROM oauth_clients WHERE id= ?';
         array_push($pg_params, $r_resource_vars['clients']);
         break;
 
@@ -5543,28 +5550,28 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         $conditions = array(
             $r_resource_vars['applications']
         );
-        pg_query_params($db_lnk, 'DELETE FROM oauth_access_tokens WHERE client_id = $1', $conditions);
-        pg_query_params($db_lnk, 'DELETE FROM oauth_refresh_tokens WHERE client_id = $1', $conditions);
+        pdoQueryStm($db_lnk, 'DELETE FROM oauth_access_tokens WHERE client_id = ?', $conditions);
+        pdoQueryStm($db_lnk, 'DELETE FROM oauth_refresh_tokens WHERE client_id = ?', $conditions);
         $sql = false;
         break;
 
     case '/webhooks/?':
-        $sql = 'DELETE FROM webhooks WHERE id= $1';
+        $sql = 'DELETE FROM webhooks WHERE id= ?';
         array_push($pg_params, $r_resource_vars['webhooks']);
         break;
 
     case '/roles/?':
-        $sql = 'DELETE FROM roles WHERE id= $1';
+        $sql = 'DELETE FROM roles WHERE id= ?';
         array_push($pg_params, $r_resource_vars['roles']);
         break;
 
     case '/board_user_roles/?':
-        $sql = 'DELETE FROM board_user_roles WHERE id= $1';
+        $sql = 'DELETE FROM board_user_roles WHERE id= ?';
         array_push($pg_params, $r_resource_vars['board_user_roles']);
         break;
 
     case '/organization_user_roles/?':
-        $sql = 'DELETE FROM organization_user_roles WHERE id= $1';
+        $sql = 'DELETE FROM organization_user_roles WHERE id= ?';
         array_push($pg_params, $r_resource_vars['organization_user_roles']);
         break;
 
@@ -5573,7 +5580,7 @@ function r_delete($r_resource_cmd, $r_resource_vars, $r_resource_filters)
         break;
     }
     if (!empty($sql)) {
-        $result = pg_query_params($db_lnk, $sql, $pg_params);
+        $result = pdoQueryStm($db_lnk, $sql, $pg_params);
         $response['error'] = array(
             'code' => (!$result) ? 1 : 0
         );
