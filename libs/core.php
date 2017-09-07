@@ -395,6 +395,9 @@ function getRevisiondifference($from_text, $to_text)
     if (!empty($from_text)) {
         $from_text = substr($from_text, 0, 1024 * 100);
     }
+    if (!is_string($to_text)) {
+        $to_text = '';
+    }
     if (!empty($to_text)) {
         $to_text = substr($to_text, 0, 1024 * 100);
     }
